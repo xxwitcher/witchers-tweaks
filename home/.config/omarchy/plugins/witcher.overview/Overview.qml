@@ -328,7 +328,10 @@ Item {
                 width: modelData.width * miniature.ratio
                 height: modelData.height * miniature.ratio
                 captureSource: root.opened && modelData.toplevel ? modelData.toplevel.wayland : null
-                live: false
+                // Live, not a single frame: a one-off capture of a window
+                // that isn't redrawing (an idle terminal, a file manager)
+                // can come back empty. Small buffers keep it cheap.
+                live: root.opened
                 constraintSize: Qt.size(width * 2, height * 2)
               }
             }
