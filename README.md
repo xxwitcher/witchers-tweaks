@@ -135,3 +135,8 @@ loader and the menu entry.
 ## License
 
 MIT, see `LICENSE`. `smidriver/driver/` keeps SiliconMotion's own license.
+
+The agent widget (`witcher.agents`) is adapted from Omarchy's `omarchy.agents`
+plugin, and its `Main.qml` and `Agent.qml` are copies of Omarchy's; the
+notifications panel reuses Omarchy's notification card at runtime.
+[Omarchy](https://github.com/basecamp/omarchy) is MIT licensed.
