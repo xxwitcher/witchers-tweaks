@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "witcher.notifications",
+  "name": "Notifications",
+  "version": "1.0.0",
+  "author": "witcher",
+  "license": "MIT",
+  "description": "Bell in the bar that opens every recent notification, each dismissable, with Dismiss all.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Notifications",
+    "description": "Bell that opens the recent notifications, each dismissable, with Dismiss all.",
+    "category": "System",
+    "allowMultiple": false
+  }
+}

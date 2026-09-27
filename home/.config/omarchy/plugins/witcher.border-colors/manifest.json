@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "witcher.border-colors",
+  "name": "Border colors",
+  "version": "1.0.0",
+  "author": "witcher",
+  "license": "MIT",
+  "description": "Color picker for the window, popup and notification border gradient, previewed live.",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Picker.qml"
+  }
+}

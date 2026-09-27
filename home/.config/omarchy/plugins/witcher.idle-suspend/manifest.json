@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "witcher.idle-suspend",
+  "name": "Suspend when idle",
+  "version": "1.0.0",
+  "author": "witcher",
+  "license": "MIT",
+  "description": "Suspends the machine after a set number of idle minutes (the \"minutes\" setting on its shell.json plugins entry, default 5).",
+  "kinds": [
+    "service"
+  ],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

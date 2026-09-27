@@ -1,0 +1,32 @@
+#!/bin/bash
+# Write a Konsole .colorscheme for the embedded agent terminal from the current
+# Omarchy theme, and print its path. The panel re-runs this when it opens, so
+# the terminal follows theme switches.
+
+set -euo pipefail
+
+colors="$HOME/.local/state/omarchy/current/theme/colors.toml"
+out="$HOME/.local/state/witcher-agents/Omarchy.colorscheme"
+mkdir -p "${out%/*}"
+
+declare -A c
+while IFS=$'\t' read -r key value; do
+  c[$key]=$value
+done < <(omarchy-theme-color --file "$colors" --all)
+
+rgb() {
+  local hex=${1#\#}
+  printf '%d,%d,%d' "0x${hex:0:2}" "0x${hex:2:2}" "0x${hex:4:2}"
+}
+
+{
+  printf '[General]\nDescription=Omarchy\nOpacity=1\n\n'
+  printf '[Background]\nColor=%s\n\n[BackgroundIntense]\nColor=%s\n\n' "$(rgb "${c[background]}")" "$(rgb "${c[background]}")"
+  printf '[Foreground]\nColor=%s\n\n[ForegroundIntense]\nColor=%s\n\n' "$(rgb "${c[foreground]}")" "$(rgb "${c[foreground]}")"
+  for i in 0 1 2 3 4 5 6 7; do
+    printf '[Color%d]\nColor=%s\n\n' "$i" "$(rgb "${c[color$i]}")"
+    printf '[Color%dIntense]\nColor=%s\n\n' "$i" "$(rgb "${c[color$((i + 8))]}")"
+  done
+} >"$out"
+
+echo "$out"

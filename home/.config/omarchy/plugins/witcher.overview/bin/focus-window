@@ -1,0 +1,36 @@
+#!/bin/bash
+# Go somewhere from the overview, then put the cursor on the window that ends
+# up focused. Omarchy focuses whatever is under the cursor, so a cursor left
+# over another window would take focus straight back on the next nudge of the
+# mouse.
+#
+#   focus-window <address>            focus that window (switches to its workspace)
+#   focus-window --workspace <id>     switch to that workspace
+
+set -euo pipefail
+
+if [[ ${1:-} == --workspace ]]; then
+  workspace="${2:?usage: focus-window --workspace <id>}"
+  [[ $workspace =~ ^[0-9]+$ ]] || { echo "focus-window: bad workspace: $workspace" >&2; exit 1; }
+  hyprctl dispatch "hl.dsp.focus({ workspace = \"$workspace\" })" >/dev/null
+  address=""
+else
+  address="${1:?usage: focus-window <address> | --workspace <id>}"
+  [[ $address =~ ^0x[0-9a-f]+$ ]] || { echo "focus-window: bad address: $address" >&2; exit 1; }
+  hyprctl dispatch "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null
+fi
+
+# The layout can move the window as it takes focus (the scrolling layout
+# scrolls it into view), so read its place once that has settled.
+sleep 0.1
+if [[ -z $address ]]; then
+  # An empty workspace has no window to point at; leave the cursor alone.
+  active=$(hyprctl activewindow -j)
+  [[ $(jq -r '.workspace.id // empty' <<<"$active") == "$workspace" ]] || exit 0
+  address=$(jq -r .address <<<"$active")
+fi
+
+read -r x y < <(hyprctl clients -j | jq -r --arg a "$address" '
+  first(.[] | select(.address == $a)) | "\(.at[0] + (.size[0] / 2 | floor)) \(.at[1] + (.size[1] / 2 | floor))"')
+[[ -n ${x:-} && -n ${y:-} ]] || exit 0
+hyprctl dispatch "hl.dsp.cursor.move({ x = $x, y = $y })" >/dev/null

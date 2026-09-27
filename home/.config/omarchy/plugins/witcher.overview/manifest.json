@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "witcher.overview",
+  "name": "Window overview",
+  "version": "1.0.0",
+  "author": "witcher",
+  "license": "MIT",
+  "description": "Mission Control-style overview of every window on every workspace; click one to go to it.",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Overview.qml"
+  }
+}

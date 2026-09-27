@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "witcher.notify-timeout",
+  "name": "Notification timeout",
+  "version": "1.0.0",
+  "author": "witcher",
+  "license": "MIT",
+  "description": "Takes every notification off the screen after 5 seconds, critical ones included.",
+  "kinds": [
+    "service"
+  ],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

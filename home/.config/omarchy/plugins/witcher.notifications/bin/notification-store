@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""The notifications panel's own list of notifications.
+
+Omarchy's notification service moves every toast that leaves the screen into
+~/.local/state/omarchy/notifications/history/ (one JSON file each, newest 10
+kept). This copies each new one into the panel's store, where it stays until
+it's dismissed, along with the images it references (Omarchy deletes those
+when it trims its history).
+
+  notification-store sync              import new history, print the list
+  notification-store list              print the list
+  notification-store dismiss NAME...   drop entries, print the list
+  notification-store clear [NAME...]   drop everything (and these names), print the list
+
+NAME is the history file name, <timestamp>-<id>.json. A dismissed name is
+remembered so the next sync doesn't bring it back from Omarchy's history.
+The list is printed as a JSON array, newest first.
+"""
+
+import json
+import os
+import shutil
+import sys
+import time
+from pathlib import Path
+
+STATE = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
+OMARCHY_DIR = STATE / "omarchy/notifications"
+HISTORY_DIR = OMARCHY_DIR / "history"
+OMARCHY_IMAGES = OMARCHY_DIR / "images"
+
+STORE = STATE / "witcher/notifications"
+ENTRIES = STORE / "entries"
+IMAGES = STORE / "images"
+DISMISSED = STORE / "dismissed.json"
+
+KEEP = 100
+# Dismissed names only need remembering while Omarchy's history could still
+# hand them back: while the file is there, or for a grace period in case it's
+# a toast that was dismissed on screen and hasn't been archived yet.
+DISMISSED_TTL_MS = 24 * 3600 * 1000
+
+
+def stamp(name):
+    try:
+        return int(name.split("-", 1)[0])
+    except ValueError:
+        return 0
+
+
+def load_dismissed():
+    try:
+        data = json.loads(DISMISSED.read_text())
+        return {str(n) for n in data} if isinstance(data, list) else set()
+    except (OSError, ValueError):
+        return set()
+
+
+def save_dismissed(names):
+    cutoff = time.time() * 1000 - DISMISSED_TTL_MS
+    in_history = {p.name for p in HISTORY_DIR.glob("*.json")}
+    keep = sorted(n for n in names if n in in_history or stamp(n) >= cutoff)
+    STORE.mkdir(parents=True, exist_ok=True)
+    tmp = DISMISSED.with_suffix(".tmp")
+    tmp.write_text(json.dumps(keep))
+    tmp.replace(DISMISSED)
+
+
+def remove_entry(name):
+    (ENTRIES / name).unlink(missing_ok=True)
+    stem = name[:-5] if name.endswith(".json") else name
+    for image in IMAGES.glob(glob_escape(stem) + "-*"):
+        image.unlink(missing_ok=True)
+
+
+def glob_escape(text):
+    return "".join("[" + c + "]" if c in "*?[" else c for c in text)
+
+
+def import_entry(src):
+    try:
+        entry = json.loads(src.read_text())
+    except (OSError, ValueError):
+        return
+    if not isinstance(entry, dict):
+        return
+    # Images Omarchy copied for this entry live next to its history; point the
+    # entry at our own copies so they outlive Omarchy's trimming.
+    for role in ("appIcon", "image"):
+        value = str(entry.get(role) or "")
+        path = value[7:] if value.startswith("file://") else value
+        if not path.startswith(str(OMARCHY_IMAGES) + "/"):
+            continue
+        image = Path(path)
+        if image.is_file():
+            IMAGES.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(image, IMAGES / image.name)
+            entry[role] = str(IMAGES / image.name)
+        else:
+            entry[role] = ""
+    ENTRIES.mkdir(parents=True, exist_ok=True)
+    tmp = ENTRIES / ("." + src.name + ".tmp")
+    tmp.write_text(json.dumps(entry))
+    tmp.replace(ENTRIES / src.name)
+
+
+def trim():
+    names = sorted((p.name for p in ENTRIES.glob("*.json")), key=stamp)
+    for name in names[:-KEEP] if len(names) > KEEP else []:
+        remove_entry(name)
+
+
+def sync():
+    dismissed = load_dismissed()
+    have = {p.name for p in ENTRIES.glob("*.json")}
+    for src in HISTORY_DIR.glob("*.json"):
+        if src.name not in have and src.name not in dismissed:
+            import_entry(src)
+    trim()
+
+
+def listing():
+    out = []
+    for path in ENTRIES.glob("*.json"):
+        try:
+            entry = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(entry, dict):
+            entry["name"] = path.name
+            out.append(entry)
+    out.sort(key=lambda e: stamp(e["name"]), reverse=True)
+    return out
+
+
+def dismiss(names):
+    dismissed = load_dismissed()
+    for name in names:
+        if "/" in name or not name.endswith(".json"):
+            continue
+        remove_entry(name)
+        dismissed.add(name)
+    save_dismissed(dismissed)
+
+
+def clear(extra):
+    names = {p.name for p in ENTRIES.glob("*.json")}
+    names |= {p.name for p in HISTORY_DIR.glob("*.json")}
+    dismiss(sorted(names | set(extra)))
+
+
+def main(argv):
+    command = argv[1] if len(argv) > 1 else "list"
+    args = argv[2:]
+    if command == "sync":
+        sync()
+    elif command == "dismiss":
+        dismiss(args)
+    elif command == "clear":
+        clear(args)
+    elif command != "list":
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    print(json.dumps(listing()))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
