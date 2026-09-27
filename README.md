@@ -15,6 +15,14 @@ tweaks lean on Omarchy internals (the shell's plugin API, its notification
 service, the menu format), so a future Omarchy release could break one; open
 an issue if it does.
 
+<p align="center">
+  <a href="docs/screenshots/overview.png"><img src="docs/screenshots/overview.png" height="200" alt="Mission Control-style overview: workspaces along the top, the hovered one's windows below"></a>
+  <a href="docs/screenshots/notifications.png"><img src="docs/screenshots/notifications.png" height="200" alt="Notification bell with recent notifications and Dismiss all"></a>
+  <a href="docs/screenshots/agentchat.png"><img src="docs/screenshots/agentchat.png" height="200" alt="Agent widget with usage limits over the agent's own terminal"></a>
+  <br>
+  <sub>Window overview · Notification bell · Agent widget (click for full size)</sub>
+</p>
+
 ## Install
 
 ```bash
@@ -72,6 +80,12 @@ battery, the Touch Bar without tiny-dfr) aren't offered.
 | Hardware | `touchbar` | Touch Bar layout and screenshot key (MacBooks running tiny-dfr) |
 
 ### Configure
+
+<a href="docs/screenshots/bordercolors.png"><img src="docs/screenshots/bordercolors.png" align="right" width="190" alt="Border color picker"></a>
+<a href="docs/screenshots/menuentry.png"><img src="docs/screenshots/menuentry.png" align="right" width="125" alt="Witcher's Tweaks under Setup in the Omarchy menu"></a>
+
+**Setup > Witcher's Tweaks > Configure** (or `./install.sh --configure`)
+offers:
 
 - **Monitors**: resolution and refresh rate, scale, rotation, position,
   mirroring and on/off for each screen. A number shows on every screen; each
