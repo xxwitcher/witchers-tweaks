@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+GenericName=System Settings
+Comment=Change everything Omarchy and Witcher's Tweaks let you customize
+Exec=witcher-settings
+Icon=witcher-settings
+StartupWMClass=org.witcher.settings
+Categories=Settings;System;
+Keywords=settings;preferences;system;configuration;omarchy;dock;appearance;theme;display;keyboard;

@@ -1,29 +1,37 @@
+<div align="center">
+
 # Witcher's Tweaks
 
-Optional tweaks for [Omarchy](https://omarchy.org): a Mission Control-style
-window overview, a macOS-style dock with an app drawer, a notification bell, a
-spinning gradient border in colors you pick, macOS-like swipes, suspend on idle
-and more. Every tweak can be added, configured and safely removed on its own,
-from the terminal or from
-**Setup > Witcher's Tweaks** in the Omarchy menu.
+Optional tweaks for [Omarchy](https://omarchy.org) and [Omarchy-Mac](https://github.com/omacom/omarchy-mac).
 
-Nothing is replaced wholesale: your own Hyprland files (`input.lua`,
-`bindings.lua`, `looknfeel.lua`) are never touched, and removing a tweak puts
-back exactly what it changed.
-
-Tested on Omarchy with Hyprland 0.56 (Lua config) and Quickshell 0.3. Some
-tweaks lean on Omarchy internals (the shell's plugin API, its notification
-service, the menu format), so a future Omarchy release could break one; open
-an issue if it does.
-
-<p align="center">
-  <a href="docs/screenshots/overview.png"><img src="docs/screenshots/overview.png" height="200" alt="Mission Control-style overview: workspaces along the top, the hovered one's windows below"></a>
-  <a href="docs/screenshots/notifications.png"><img src="docs/screenshots/notifications.png" height="200" alt="Notification bell with recent notifications and Dismiss all"></a>
-  <a href="docs/screenshots/agentchat.png"><img src="docs/screenshots/agentchat.png" height="200" alt="Agent widget with usage limits over the agent's own terminal"></a>
-  <a href="docs/screenshots/dock_and_app_drawer.png"><img src="docs/screenshots/dock_and_app_drawer.png" height="200" alt="macOS-style dock with the Apps drawer open above it: every app in rows of five with a search field"></a>
-  <br>
-  <sub>Window overview · Notification bell · Agent widget · Dock and app drawer (click for full size)</sub>
+<p>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-a855f7.svg" alt="License: MIT"></a> <a href="https://omarchy.org"><img src="https://img.shields.io/badge/Omarchy-4.x-c4b5fd.svg" alt="Omarchy 4.x"></a> <a href="https://github.com/omarchy-mac/omarchy-mac"><img src="https://img.shields.io/badge/Omarchy--Mac-Apple%20Silicon-f5f5f7.svg" alt="Omarchy-Mac"></a> <a href="https://hypr.land"><img src="https://img.shields.io/badge/Hyprland-0.56-58e1ff.svg" alt="Hyprland 0.56"></a> <a href="https://quickshell.org"><img src="https://img.shields.io/badge/Quickshell-0.3-da70d6.svg" alt="Quickshell 0.3"></a>
 </p>
+
+<a href="docs/screenshots/settings_app.png"><img src="docs/screenshots/settings_app.png" width="820" alt="The Settings app"></a>
+
+</div>
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><a href="docs/screenshots/dock_and_app_drawer.png"><img src="docs/screenshots/dock_and_app_drawer.png" alt="Dock and app drawer"></a></td>
+    <td width="50%"><a href="docs/screenshots/overview.png"><img src="docs/screenshots/overview.png" alt="Window overview"></a></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Dock and app drawer</sub></td>
+    <td align="center"><sub>Window overview</sub></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/notifications.png"><img src="docs/screenshots/notifications.png" alt="Notification bell"></a></td>
+    <td><a href="docs/screenshots/agentchat.png"><img src="docs/screenshots/agentchat.png" alt="Agent widget"></a></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Notification bell</sub></td>
+    <td align="center"><sub>Agent widget</sub></td>
+  </tr>
+</table>
 
 ## Install
 
@@ -32,131 +40,65 @@ git clone https://github.com/xxwitcher/witchers-tweaks.git ~/witchers-tweaks
 ~/witchers-tweaks/install.sh
 ```
 
-The installer goes category by category (Look, Input, Keybindings, Top bar,
-Notifications, Windows, Power, Hardware) and lets you pick individual tweaks
-from each; nothing is picked by default. It uses `gum`, which ships with
-Omarchy, and falls back to y/n prompts without it. Afterwards the same menu
-lives in **Setup > Witcher's Tweaks** (right under Config): **Add**,
-**Remove** and **Configure**.
+Pick and choose the tweaks you want. Use **Setup > Witcher's Tweaks** in the Omarchy menu, or the Settings app to re-configure after install. Keep the clone: installed files link to it, and `git pull` updates them.
 
 ```bash
-./install.sh                     # pick tweaks category by category
-./install.sh --add [tweak...]    # add tweaks (asks which, from those not installed)
-./install.sh --remove [tweak...] # remove tweaks (asks which, then confirms)
-./install.sh --configure [name]  # monitors, borders, corners, suspend, notifications, dock
-./install.sh --status            # which tweaks are installed
-./install.sh --list              # every tweak, by category
-./install.sh --all               # every tweak this machine can use
-./install.sh --uninstall         # remove everything, including the menu entry
-./install.sh --monitors          # the interactive monitor setup
-SUSPEND_MINUTES=10 ./install.sh suspend            # without the question
-NOTIFY_SECONDS=8 ./install.sh --configure notifications
-DOCK_SIZE=56 DOCK_MAGNIFICATION=96 DOCK_TRANSPARENCY=20 ./install.sh --configure dock
-WINDOW_ROUNDING=60 ./install.sh rounding
+./install.sh --add [tweak...]      # add tweaks
+./install.sh --remove [tweak...]   # remove tweaks
+./install.sh --configure [name]    # monitors, borders, corners, suspend, notifications, dock
+./install.sh --status              # what's installed
+./install.sh --list                # every tweak
+./install.sh --uninstall           # remove everything
 ```
 
-Keep the clone: installed files link back into it, and `git pull` updates
-them. Tweaks that don't apply to the machine (battery percentage without a
-battery, the Touch Bar without tiny-dfr) aren't offered.
+## Tweaks
 
-## The tweaks
+| Tweak | What it does |
+|---|---|
+| `settings` | Settings app, like macOS's System Settings (see below) |
+| `dock` | macOS-style dock with an app drawer (see below) |
+| `overview` | Mission Control-style window overview; 3-finger swipe up |
+| `border` | Animated three-color gradient border on windows, popups, notifications and the lock screen |
+| `rounding` | Window corner rounding, 0–100% (same scale as the dock) |
+| `gaps` | No gaps between windows |
+| `wsfade` | Workspaces slide in with a fade |
+| `columns` | Scrolling layout: one column per screen |
+| `swipe` | macOS-like 3-finger workspace swipe |
+| `swapkeys` | Swap left Ctrl and left Super |
+| `bindbrowser` | SUPER+B opens the browser |
+| `bindagent` | SUPER+A opens your default agent |
+| `bindclose` | CTRL+Q closes the window |
+| `autohide` | Top bar hides until the cursor touches the top edge |
+| `clock` | Clock in the middle of the top bar |
+| `battery` | Battery percentage in the top bar |
+| `bell` | Notification bell with recent notifications |
+| `agentchat` | Agent widget with your agent's terminal inside |
+| `notifytimeout` | Notifications leave after a few seconds, critical ones too |
+| `suspend` | Suspend after 1–60 idle minutes instead of the screensaver |
+| `smidriver` | Silicon Motion SM77x USB display adapter driver, with a crash fix |
+| `touchbar` | Touch Bar layout (MacBooks with tiny-dfr) |
 
-| Category | Tweak | What it does |
-|---|---|---|
-| Look | `gaps` | No gaps between windows |
-| Look | `border` | Spinning three-color gradient border on windows, bar popups, notifications and the lock screen; colors picked in Configure > Borders |
-| Look | `rounding` | Window corner rounding, 0% (sharp, Omarchy's default) to 100% (a 32 px radius), set on a slider in Configure > Corners with a live preview. The dock's corner rounding uses the same scale, so the same % matches |
-| Look | `wsfade` | Workspaces slide in with a fade instead of switching instantly |
-| Look | `columns` | Scrolling layout: one column per screen instead of two |
-| Input | `swapkeys` | Swap left Ctrl and left Super (right-hand keys stay) |
-| Input | `swipe` | 3-finger swipe between workspaces, tuned like macOS: a short swipe or quick flick is enough |
-| Keybindings | `bindbrowser` | SUPER+B opens the browser (instead of SUPER+SHIFT+B) |
-| Keybindings | `bindagent` | SUPER+A opens your default agent (instead of SUPER+SHIFT+A) |
-| Keybindings | `bindclose` | CTRL+Q closes the window |
-| Top bar | `autohide` | The bar hides until the cursor touches the top edge |
-| Top bar | `clock` | Clock in the middle of the bar |
-| Top bar | `battery` | Battery percentage next to the battery icon |
-| Top bar | `bell` | Bell that opens recent notifications; dismiss each with its ✕, or all at once |
-| Top bar | `agentchat` | The agent widget with your default agent's real terminal inside it |
-| Notifications | `notifytimeout` | Every notification leaves after a few seconds (5 by default), critical ones too |
-| Windows | `overview` | Mission Control-style overview: workspaces along the top, the hovered one's windows below; 3-finger swipe up |
-| Windows | `dock` | A dock like macOS's: the Apps icon (a panel above the dock with every app in rows of five and a search field, like macOS's Apps view: type to search, arrows and Enter to open, drag an app onto the dock to keep it, right click for Keep in Dock, Open at Login and Remove), kept apps, then running and recently closed ones, then minimized windows, Downloads and the Trash. Drag icons to arrange them, drag a running app among the kept ones to keep it, drag a kept one out of the dock to remove it from the dock, or drop any app (from the dock or the Apps panel) on the Trash to uninstall it after a confirmation. Right click for the app's windows, Keep in Dock, Open at Login, Show All Windows, Hide and Quit. SUPER+M minimizes the focused window. Configure > Dock lists every setting with its current value; pick one to change it: macOS's Desktop & Dock settings (size, magnification, position, minimize into application icon, automatically hide and show or only when a window is under it, animate opening applications, indicators, recent apps), what clicking the app you're in does, dock and app drawer transparency and corner rounding (sliders with a live preview), and the dock's border: the windows' gradient, custom gradient colors, one solid color, or none |
-| Power | `suspend` | No screensaver; suspend after 1, 5, 10, 15, 30 or 60 idle minutes |
-| Hardware | `smidriver` | Silicon Motion SM77x USB display adapter driver, on evdi-dkms, with a crash fix |
-| Hardware | `touchbar` | Touch Bar layout and screenshot key (MacBooks running tiny-dfr) |
+### Settings app
 
-### Configure
+A floating settings window with a searchable sidebar: Wi-Fi, Bluetooth, network, notifications, sound, general, appearance, top bar, dock, displays, power, security, keyboard, mouse and trackpad, default apps, shell plugins, the tweaks and config files. Tweaks you haven't installed show up as switches that install them. Opens with `witcher-settings [section]`.
 
-<a href="docs/screenshots/bordercolors.png"><img src="docs/screenshots/bordercolors.png" align="right" width="190" alt="Border color picker"></a>
-<a href="docs/screenshots/menuentry.png"><img src="docs/screenshots/menuentry.png" align="right" width="125" alt="Witcher's Tweaks under Setup in the Omarchy menu"></a>
+Input settings and custom shortcuts go in `~/.config/witchers-tweaks/settings.json`; your Hyprland files aren't edited.
 
-**Setup > Witcher's Tweaks > Configure** (or `./install.sh --configure`)
-offers:
+### Dock
 
-- **Monitors**: resolution and refresh rate, scale, rotation, position,
-  mirroring and on/off for each screen. A number shows on every screen; each
-  change applies live and reverts by itself unless confirmed within 15
-  seconds. Saved to a marked block at the end of `~/.config/hypr/monitors.lua`,
-  matched by monitor model.
-- **Borders** (with `border`): a color picker for the gradient's three colors
-  and the inactive border (saturation/brightness square, hue strip, hex field,
-  eyedropper, presets), previewed live on your windows. Enter saves, Esc
-  cancels.
-- **Suspend** (with `suspend`) and **Notifications** (with `notifytimeout`):
-  how long to wait.
+Pinned, running and recent apps, minimized windows, Downloads and Trash. The Apps icon opens a searchable app drawer. Drag icons to rearrange, keep or remove them; drop an app on the Trash to uninstall it. SUPER+M minimizes into the dock with a genie, scale, fade or slide effect. Has macOS's Desktop & Dock options plus transparency, corner rounding and border colors.
 
 ## How it works
 
-- **Hyprland tweaks** are all in `home/.config/hypr/witchers-tweaks.lua`,
-  linked to `~/.config/hypr/` and loaded by one marked block at the end of
-  your `~/.config/hypr/hyprland.lua`. Each runs only while its name is in
-  `~/.config/witchers-tweaks/tweaks.conf`. The block and the file go away with
-  the last Hyprland tweak.
-- **Shell tweaks** are Omarchy shell plugins (`home/.config/omarchy/plugins/
-  witcher.*`), linked into `~/.config/omarchy/plugins/`. Bar placement and
-  plugin settings are edited in place in `~/.config/omarchy/shell.json`.
-- **Border colors** are kept in `~/.config/witchers-tweaks/border.conf`; the
-  picker's `bin/border-colors` also writes
-  `~/.config/omarchy/themed/shell.hyprland.toml.tpl` so the shell's popups,
-  notifications and lock screen share the gradient.
-- **System files** (the Touch Bar config, the SMI driver) are installed as
-  root, with the original kept as `.bak`.
-- **The menu entry** is a marked block in
-  `~/.config/omarchy/extensions/omarchy-menu.jsonc`. Omarchy lists its own rows
-  first, so to sit under Config the block also hides the Setup rows after
-  Config (Direct Boot, Reset Computer) and re-adds copies below it, rebuilt
-  from Omarchy's menu on every run.
+- Hyprland tweaks are in `home/.config/hypr/witchers-tweaks.lua`, loaded from the end of your `hyprland.lua` and switched on by `~/.config/witchers-tweaks/tweaks.conf`.
+- Shell tweaks are Omarchy shell plugins (`witcher.*`) with their settings in `~/.config/omarchy/shell.json`.
+- The Settings app is QML in `settings/`, using the Omarchy shell's own components.
+- Removing a tweak restores what it replaced. Packages it installed stay installed.
 
-### Removing
+## Compatibility
 
-`--remove` undoes a tweak's steps in reverse. A linked file goes back to what
-it replaced (its newest `.bak.<timestamp>`), or nothing; settings leave
-`shell.json`; the auto-hide loop stops and the bar comes back; the screensaver
-comes back with `suspend`; `border` rebuilds the theme without the gradient
-and stops the spinning; `bell` deletes the notifications it saved;
-`smidriver` runs SiliconMotion's uninstaller; `touchbar` restores the original
-files. Packages a tweak pulled in (qmltermwidget, dkms, evdi-dkms, kernel
-headers) stay installed. `--uninstall` removes every tweak, the Hyprland
-loader and the menu entry.
-
-## Notes
-
-- `bindagent` and `bindbrowser` unbind Omarchy's SUPER+SHIFT+A and
-  SUPER+SHIFT+B defaults.
-- The overview's swipe up/down comes with `overview`; `swipe` is the
-  sideways workspace swipe.
-- `notifytimeout` drives Omarchy's own notification service rather than
-  replacing it, so Do Not Disturb and history keep working; unlike Omarchy's
-  timer it doesn't pause while the pointer is over a toast.
-- The SiliconMotion driver in `smidriver/driver/` is SiliconMotion's
-  software (BSD-style license, see its `LICENSE`), from
-  [SiliconMotion-Driver-Fix](https://github.com/xxwitcher/SiliconMotion-Driver-Fix).
+Developed on [Omarchy-Mac](https://github.com/omacom/omarchy-mac) and also works on a regular Omarchy install (Hyprland 0.56 with Lua config, Quickshell 0.3). Some tweaks rely on Omarchy internals, so an Omarchy update could break something in the future; [open an issue](https://github.com/xxwitcher/witchers-tweaks/issues) if it does.
 
 ## License
 
-MIT, see `LICENSE`. `smidriver/driver/` keeps SiliconMotion's own license.
-
-The agent widget (`witcher.agents`) is adapted from Omarchy's `omarchy.agents`
-plugin, and its `Main.qml` and `Agent.qml` are copies of Omarchy's; the
-notifications panel reuses Omarchy's notification card at runtime.
-[Omarchy](https://github.com/basecamp/omarchy) is MIT licensed.
+MIT. The agent widget is adapted from Omarchy's `omarchy.agents` plugin; [Omarchy](https://github.com/basecamp/omarchy) is MIT licensed.

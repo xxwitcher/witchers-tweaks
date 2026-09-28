@@ -33,6 +33,8 @@ import qs.Ui
 //     "magnification": 0,     icon size under the pointer; 0 is off
 //     "position": "bottom",   bottom, left or right
 //     "minimize": false,      true: minimize windows into application icon
+//     "minimizeEffect": "genie",   minimize animation: genie, scale, fade, slide, none
+//     "minimizeSpeed": 100,   its speed, 50 to 200 %
 //     "hide": "auto",         auto: automatically hide and show the Dock;
 //                             smart: hide only while a window is under it;
 //                             never: always shown, windows tile around it
@@ -353,7 +355,12 @@ Item {
     }
   }
 
-  Component.onCompleted: Quickshell.execDetached(["mkdir", "-p", root.stateDir])
+  Component.onCompleted: {
+    Quickshell.execDetached(["mkdir", "-p", root.stateDir])
+    // Window places for the minimize effect.
+    Hyprland.refreshToplevels()
+    rememberTimer.restart()
+  }
 
   function noteRecent(ids) {
     var next = ids.concat(recentIds.filter(function(id) { return ids.indexOf(id) < 0 }))
@@ -441,7 +448,101 @@ Item {
   }
 
   function focusWindow(top) {
-    if (top) Quickshell.execDetached([tool, "focus", hexAddress(top.address)])
+    if (!top) return
+    var go = function() { Quickshell.execDetached([root.tool, "focus", root.hexAddress(top.address)]) }
+    // Coming back from the dock plays the minimize effect backwards first.
+    if (isMinimized(top) && playEffect(top, true, go)) return
+    go()
+  }
+
+  // --------------------------------------------------------------- minimize effect
+
+  // "minimizeEffect": genie (macOS), scale, fade, slide or none.
+  readonly property string minimizeEffect: choice("minimizeEffect", ["genie", "scale", "fade", "slide", "none"])
+  // "minimizeSpeed": percent of the normal speed, 50 (slower) to 200 (faster).
+  readonly property real minimizeSpeed: number("minimizeSpeed", 100, 50, 200)
+
+  // Where each window last was (layout coordinates and its monitor), so the
+  // effect can start from there once the window has already gone.
+  property var windowRects: ({})
+  // The dock window on each screen, by screen name.
+  property var dockWindows: ({})
+
+  function addressKey(value) { return String(value || "").replace(/^0x/, "").toLowerCase() }
+
+  function rememberWindows() {
+    var tops = Hyprland.toplevels ? Hyprland.toplevels.values : []
+    var next = ({})
+    for (var i = 0; i < tops.length; i++) {
+      var t = tops[i]
+      if (!t || !t.workspace || t.workspace.id < 0 || !t.lastIpcObject) continue
+      var at = t.lastIpcObject.at, size = t.lastIpcObject.size
+      if (!at || !size) continue
+      next[addressKey(t.address)] = { x: at[0], y: at[1], w: size[0], h: size[1], monitor: t.monitor ? String(t.monitor.name) : "" }
+    }
+    // Minimized windows keep their last place.
+    for (var k in windowRects) if (!next[k]) next[k] = windowRects[k]
+    windowRects = next
+  }
+
+  function toplevelFor(key) {
+    var tops = Hyprland.toplevels ? Hyprland.toplevels.values : []
+    for (var i = 0; i < tops.length; i++) if (tops[i] && addressKey(tops[i].address) === key) return tops[i]
+    return null
+  }
+
+  // Plays the effect for a window (backwards: out of the dock); false when
+  // there's nothing to play it with.
+  function playEffect(top, backwards, done) {
+    if (minimizeEffect === "none" || !top) return false
+    var rect = windowRects[addressKey(top.address)]
+    if (!rect) return false
+    var win = dockWindows[rect.monitor]
+    if (!win) {
+      for (var name in dockWindows) { win = dockWindows[name]; break }
+    }
+    if (!win) return false
+    win.playMinimize(top, rect, backwards, done)
+    return true
+  }
+
+  // Minimizing (SUPER+M, Hide, anything that moves a window to
+  // special:minimized) plays the effect; Hyprland's events come before the
+  // window positions are read again, so the remembered place is still the
+  // one before it went.
+  Connections {
+    target: Hyprland
+    enabled: root.minimizeEffect !== "none"
+    function onRawEvent(event) {
+      var name = event ? String(event.name) : ""
+      if (name === "movewindowv2") {
+        var parts = String(event.data).split(",")
+        if (parts.length >= 3 && parts.slice(2).join(",") === root.minimizedName) {
+          var top = root.toplevelFor(root.addressKey(parts[0]))
+          if (top) root.playEffect(top, false, null)
+        }
+      }
+      if (/^(openwindow|closewindow|movewindowv2|changefloatingmode|fullscreen|workspacev2|activewindowv2)$/.test(name))
+        rectTimer.restart()
+    }
+  }
+
+  Timer {
+    id: rectTimer
+    interval: 120
+    onTriggered: { Hyprland.refreshToplevels(); rememberTimer.restart() }
+  }
+  Timer {
+    id: rememberTimer
+    interval: 60
+    onTriggered: root.rememberWindows()
+  }
+  // Floating windows moved by hand send no event.
+  Timer {
+    interval: 1500
+    repeat: true
+    running: root.minimizeEffect !== "none"
+    onTriggered: { Hyprland.refreshToplevels(); rememberTimer.restart() }
   }
 
   function minimizeWindows(tops) {
@@ -634,6 +735,49 @@ Item {
         if (root.position === "left") return { main: p.y, cross: p.x }
         if (root.position === "right") return { main: p.y, cross: width - p.x }
         return { main: p.x, cross: height - p.y }
+      }
+
+      // ---------- minimize effect ----------
+
+      Component.onCompleted: {
+        var map = root.dockWindows
+        map[String(modelData.name)] = dockWindow
+        root.dockWindows = map
+      }
+      Component.onDestruction: {
+        var map = root.dockWindows
+        if (map[String(modelData.name)] === dockWindow) delete map[String(modelData.name)]
+        root.dockWindows = map
+      }
+
+      // The window's dock spot: its minimized picture, or its app's icon
+      // (minimizing into the app icon, or while its picture isn't placed
+      // yet), else the middle of the dock.
+      function minimizeTarget(top) {
+        var slot = layout.slots["min:" + top.address]
+        if (!slot) {
+          for (var key in root.itemsByKey) {
+            var item = root.itemsByKey[key]
+            if (item.kind === "app" && item.app.windows.indexOf(top) >= 0) { slot = layout.slots[key]; break }
+          }
+        }
+        // Always where the dock is when shown, even while it slides in.
+        var cross = root.edgeGap + root.padding + root.dotRoom
+        if (!slot) {
+          var mid = (layout.bodyStart + layout.bodyEnd) / 2
+          var r0 = place(mid - root.iconSize / 2, cross, root.iconSize, root.iconSize)
+          return Qt.rect(r0.x, r0.y, r0.width, r0.height)
+        }
+        var r = place(slot.start, cross, slot.size, slot.size)
+        return Qt.rect(r.x, r.y, r.width, r.height)
+      }
+
+      function playMinimize(top, rect, backwards, done) {
+        var mx = monitor ? monitor.x : 0, my = monitor ? monitor.y : 0
+        minimizeFx.effect = root.minimizeEffect
+        minimizeFx.speed = root.minimizeSpeed
+        minimizeFx.play(top, Qt.rect(rect.x - mx, rect.y - my, rect.w, rect.h),
+          function() { return dockWindow.minimizeTarget(top) }, backwards, done)
       }
 
       property real hideOffset: revealed ? 0 : -(root.thickness + root.edgeGap + Style.space(10))
@@ -902,7 +1046,7 @@ Item {
       }
 
       readonly property bool revealed: {
-        if (popupOpen || modal || held || dragging || root.peek !== "") return true
+        if (popupOpen || modal || held || dragging || root.peek !== "" || minimizeFx.active) return true
         if (root.hideMode === "never") return true
         if (fullscreen) return false
         if (root.hideMode === "smart") return !covered
@@ -1250,6 +1394,12 @@ Item {
               }
             }
           }
+        }
+
+        // ---------- the minimize effect, over everything ----------
+        MinimizeEffect {
+          id: minimizeFx
+          z: 300
         }
 
         // ---------- the Apps panel ----------

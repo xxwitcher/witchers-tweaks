@@ -1,0 +1,19 @@
+singleton App 1.0 App.qml
+Scroller 1.0 Scroller.qml
+Group 1.0 Group.qml
+SettingRow 1.0 SettingRow.qml
+Switch 1.0 Switch.qml
+SwitchRow 1.0 SwitchRow.qml
+Slider 1.0 Slider.qml
+SliderRow 1.0 SliderRow.qml
+Dropdown 1.0 Dropdown.qml
+ChoiceRow 1.0 ChoiceRow.qml
+Segmented 1.0 Segmented.qml
+SegmentedRow 1.0 SegmentedRow.qml
+PillButton 1.0 PillButton.qml
+ButtonRow 1.0 ButtonRow.qml
+InfoRow 1.0 InfoRow.qml
+ColorWell 1.0 ColorWell.qml
+ColorRow 1.0 ColorRow.qml
+TweakRow 1.0 TweakRow.qml
+Icon 1.0 Icon.qml

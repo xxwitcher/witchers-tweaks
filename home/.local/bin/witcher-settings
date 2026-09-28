@@ -1,0 +1,36 @@
+#!/bin/bash
+# Opens Witcher's Tweaks Settings, or brings it forward when it's open.
+#
+#   witcher-settings [section]    section: appearance, dock, displays, ...
+#
+# The app is the QML in the repo's settings/ folder, run by its own
+# Quickshell (app id org.witcher.settings). It borrows the Omarchy shell's
+# Commons and Ui modules, so it follows the theme like the rest of the
+# desktop; the folder it runs from, with those linked in, is rebuilt in
+# $XDG_RUNTIME_DIR on each start.
+
+set -euo pipefail
+
+self=$(readlink -f "${BASH_SOURCE[0]}")
+repo=$(cd "$(dirname "$self")/../../.." && pwd)
+app="$repo/settings"
+shell_dir="${OMARCHY_PATH:-/usr/share/omarchy}/shell"
+runtime="${XDG_RUNTIME_DIR:-/tmp}/witcher-settings"
+section="${1:-}"
+
+mkdir -p "$runtime"
+printf '%s\n' "$section" >"$runtime/section"
+
+address=$(hyprctl clients -j 2>/dev/null | jq -r 'first(.[] | select(.class == "org.witcher.settings") | .address) // empty')
+if [[ -n $address ]]; then
+  hyprctl dispatch "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null
+  exit 0
+fi
+
+ln -sfn "$app/shell.qml" "$runtime/shell.qml"
+for dir in components panes bin; do ln -sfn "$app/$dir" "$runtime/$dir"; done
+ln -sfn "$shell_dir/Commons" "$runtime/Commons"
+ln -sfn "$shell_dir/Ui" "$runtime/Ui"
+
+export WITCHER_REPO="$repo"
+exec quickshell -n -p "$runtime"

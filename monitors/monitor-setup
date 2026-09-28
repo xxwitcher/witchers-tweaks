@@ -10,6 +10,13 @@ without saving" reloads Hyprland to put everything back.
 
 Run from the Witcher's Tweaks installer (./install.sh --monitors, or
 Configure > Monitors in the menu) or directly.
+
+The Settings app's Displays pane uses two non-interactive modes, each
+reading a JSON list of monitors on stdin ({name, mode, x, y, scale,
+transform, mirror, disabled}; missing fields keep their current values):
+
+  monitor-setup --apply    apply the settings live (nothing saved)
+  monitor-setup --save     apply and save them to monitors.lua
 """
 
 import copy
@@ -336,9 +343,47 @@ def save(monitors):
         print(f"Saved to {CONFIG}")
 
 
+def from_json(entries):
+    """Monitors as they are now, with the given changes on top."""
+    monitors = load_monitors()
+    by_name = {m.name: m for m in monitors}
+    for entry in entries:
+        monitor = by_name.get(entry.get("name"))
+        if not monitor:
+            continue
+        for attr in ("mode", "x", "y", "scale", "transform", "mirror", "disabled"):
+            if attr in entry and entry[attr] is not None:
+                value = entry[attr]
+                if attr == "mode":
+                    value = clean_mode(str(value))
+                elif attr in ("x", "y", "transform"):
+                    value = int(value)
+                elif attr == "scale" and value != "auto":
+                    value = float(value)
+                elif attr == "mirror":
+                    value = str(value or "")
+                elif attr == "disabled":
+                    value = bool(value)
+                setattr(monitor, attr, value)
+    return monitors
+
+
+def batch(mode):
+    monitors = from_json(json.load(sys.stdin))
+    for monitor in monitors:
+        subprocess.run(["hyprctl", "eval", monitor.rule()], capture_output=True)
+    if mode == "--save":
+        time.sleep(0.4)
+        refresh_from_hyprland(monitors)
+        save(monitors)
+
+
 def main():
     if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
         sys.exit("Run this inside a Hyprland session.")
+    if len(sys.argv) > 1 and sys.argv[1] in ("--apply", "--save"):
+        batch(sys.argv[1])
+        return
     monitors = load_monitors()
     identifier = Identifier()
 

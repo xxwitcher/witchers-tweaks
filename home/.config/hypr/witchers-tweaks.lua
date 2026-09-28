@@ -26,6 +26,23 @@ end
 
 local function on(name) return enabled[name] == true end
 
+-- ---------------------------------------------------------------- settings app
+
+-- The Settings app opens as a floating window, like macOS's System Settings,
+-- and what it saves (input settings, custom shortcuts) is loaded here, before
+-- the tweaks below so they build on it (swapkeys adds to its keyboard
+-- options).
+if on("settings-app") then
+  o.window("^(org\\.witcher\\.settings)$", { float = true, center = true, size = { 980, 680 } })
+  local settings = loadfile(state .. "/settings.lua")
+  if settings then
+    local ok, err = pcall(settings)
+    if not ok then
+      hl.exec_cmd("notify-send 'Witcher Settings' " .. string.format("%q", "settings.lua: " .. tostring(err)))
+    end
+  end
+end
+
 -- ---------------------------------------------------------------- look
 
 if on("no-gaps") then

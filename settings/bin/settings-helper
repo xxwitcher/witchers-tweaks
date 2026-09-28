@@ -1,0 +1,379 @@
+#!/bin/bash
+# The Settings app's hands outside QML: reading the machine's current state
+# and saving settings, always through Omarchy's own commands or files the app
+# owns. Every reader prints JSON.
+#
+#   settings-helper status                    most on/off states and current choices
+#   settings-helper tweaks                    Witcher's Tweaks, with category, state, settings
+#   settings-helper tweak add|remove <name>   add or remove one tweak
+#   settings-helper dock-set <key> <json>     one dock setting (null removes it)
+#   settings-helper bar-set <key> <json>      one bar setting in shell.json (position, transparent)
+#   settings-helper input                     current input settings (Hyprland's live values)
+#   settings-helper input-set <key> <json>    save one input setting and apply it live
+#   settings-helper input-set-many <json>     several top-level input settings together
+#   settings-helper window-mode floating|tiled   how new windows open
+#   settings-helper shortcut-add <keys> <command> <description>
+#   settings-helper shortcut-remove <keys>    custom shortcuts saved by the app
+#   settings-helper xkb                       keyboard layouts, variants and options
+#   settings-helper timezones                 every timezone
+#   settings-helper backgrounds               the current theme's backgrounds
+#   settings-helper themes                    installed themes with preview images
+#   settings-helper fonts                     monospace fonts
+#   settings-helper monitors                  monitors as hyprctl sees them
+#   settings-helper monitors-save             save monitors (JSON on stdin) via monitors/monitor-setup
+#   settings-helper corners-set <percent>     window corner rounding (the rounding tweak)
+#   settings-helper border <get|preview|set|revert> [colors]   window border colors
+#   settings-helper notify-seconds <n>        how long notifications stay (the notifytimeout tweak)
+#   settings-helper suspend-minutes <n>       idle minutes before suspending (the suspend tweak)
+#
+# App settings live in ~/.config/witchers-tweaks/settings.json and are
+# written out as ~/.config/witchers-tweaks/settings.lua, which
+# witchers-tweaks.lua loads (the settings-app Hyprland tweak).
+
+set -euo pipefail
+
+here="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+repo="$(cd "$here/../.." && pwd)"
+installer="$repo/install.sh"
+state="$HOME/.config/witchers-tweaks"
+settings_json="$state/settings.json"
+settings_lua="$state/settings.lua"
+shell_config="$HOME/.config/omarchy/shell.json"
+plugins="$repo/home/.config/omarchy/plugins"
+
+die() { echo "settings-helper: $*" >&2; exit 1; }
+
+# ---------------------------------------------------------------- shell.json
+
+# Applies a jq filter to shell.json (the shell reloads it on its own).
+shell_edit() {
+  local filter="$1"
+  shift
+  [[ -f $shell_config ]] || die "no $shell_config"
+  local next
+  next=$(jq "$@" "$filter" "$shell_config")
+  printf '%s\n' "$next" >"$shell_config.tmp.$$"
+  mv "$shell_config.tmp.$$" "$shell_config"
+}
+
+# ---------------------------------------------------------------- app settings
+
+settings_read() {
+  if [[ -s $settings_json ]]; then cat "$settings_json"; else echo '{}'; fi
+}
+
+settings_write() {
+  mkdir -p "$state"
+  printf '%s\n' "$1" >"$settings_json.tmp.$$"
+  mv "$settings_json.tmp.$$" "$settings_json"
+  write_lua
+}
+
+# A JSON value as Lua.
+lua_value() {
+  jq -r 'def lua: if type == "string" then @json
+    elif type == "boolean" or type == "number" then tostring
+    elif type == "object" then "{ " + ([to_entries[] | "\(.key) = \(.value | lua)"] | join(", ")) + " }"
+    else "nil" end; lua' <<<"$1"
+}
+
+# settings.json as Lua for Hyprland: input settings and custom shortcuts.
+write_lua() {
+  local json input shortcuts
+  json=$(settings_read)
+  input=$(jq -c '.input // {}' <<<"$json")
+  {
+    echo "-- Written by the Witcher's Tweaks Settings app from settings.json."
+    echo "-- Change these in Settings; edits here are replaced."
+    if [[ $input != "{}" ]]; then
+      echo "hl.config({ input = $(lua_value "$input") })"
+    fi
+    # Every new window floats (Settings > Appearance > Windows > New windows open).
+    if [[ $(jq -r '.windows.floating // false' <<<"$json") == true ]]; then
+      echo 'hl.window_rule({ match = { class = ".*" }, float = true })'
+    fi
+    jq -r '.shortcuts // [] | .[] | "hl.bind(\(.keys | @json), hl.dsp.exec_cmd(\(.command | @json)), { description = \(.description | @json) })"' <<<"$json"
+  } >"$settings_lua.tmp.$$"
+  mv "$settings_lua.tmp.$$" "$settings_lua"
+}
+
+# ---------------------------------------------------------------- status
+
+flag() { [[ -e $1 ]] && echo true || echo false; }
+
+status() {
+  local toggles="$HOME/.local/state/omarchy/toggles"
+  local temp nightlight=false dnd=false
+  temp=$(hyprctl hyprsunset temperature 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)
+  [[ -n $temp ]] && (( temp < 6000 )) && nightlight=true
+  [[ $(omarchy-shell -q notifications isDnd 2>/dev/null || true) == true ]] && dnd=true
+  local text_size
+  text_size=$(awk '/^[[:space:]]*\[/ { f = ($0 ~ /\[font\]/); next } f && /base-size/ { sub(/^[^=]*=[[:space:]]*/, ""); print; exit }' "$HOME/.config/omarchy/shell.toml" 2>/dev/null || true)
+  local tz
+  tz=$(timedatectl show -p Timezone --value 2>/dev/null || true)
+  jq -n \
+    --arg theme "$(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null || true)" \
+    --arg background "$(readlink -f "$HOME/.local/state/omarchy/current/background" 2>/dev/null || true)" \
+    --arg font "$(omarchy-font-current 2>/dev/null || true)" \
+    --arg textSize "${text_size:-12}" \
+    --argjson stayAwake "$(flag "$HOME/.local/state/omarchy/indicators/stay-awake")" \
+    --argjson screensaverOff "$(flag "$toggles/screensaver-off")" \
+    --argjson barHidden "$(flag "$toggles/bar-off")" \
+    --argjson noGaps "$(flag "$toggles/hypr/window-no-gaps.lua")" \
+    --argjson squareRatio "$(flag "$toggles/hypr/single-window-aspect-ratio.lua")" \
+    --argjson crashCaptureOff "$(flag "$toggles/crash-capture-off")" \
+    --argjson touchpadOff "$(flag "$toggles/hypr/touchpad-disabled-name")" \
+    --argjson touchscreenOff "$(flag "$toggles/hypr/touchscreen-disabled-name")" \
+    --argjson touchscreen "$( [[ -n $(omarchy-hw-touchscreen 2>/dev/null || true) ]] && echo true || echo false)" \
+    --argjson haptics "$(command -v dell-xps-touchpad-haptics >/dev/null && echo true || echo false)" \
+    --argjson hibernation "$(omarchy-hibernation-available >/dev/null 2>&1 && echo true || echo false)" \
+    --arg layout "$(hyprctl activeworkspace -j 2>/dev/null | jq -r '.tiledLayout // empty' || true)" \
+    --arg windowMode "$(settings_read | jq -r 'if .windows.floating then "floating" else "tiled" end')" \
+    --argjson nightlight "$nightlight" \
+    --argjson dnd "$dnd" \
+    --arg powerProfile "$(powerprofilesctl get 2>/dev/null || true)" \
+    --arg powerProfiles "$(omarchy-powerprofiles-list 2>/dev/null | paste -sd, || true)" \
+    --arg browser "$(omarchy-default-browser 2>/dev/null || true)" \
+    --arg terminal "$(omarchy-default-terminal 2>/dev/null || true)" \
+    --arg editor "$(omarchy-default-editor 2>/dev/null || true)" \
+    --arg agent "$(omarchy-default-agent 2>/dev/null || true)" \
+    --arg dns "$(omarchy-dns 2>/dev/null || true)" \
+    --arg channel "$(omarchy-channel-current 2>/dev/null || true)" \
+    --arg version "$(omarchy-version 2>/dev/null || cat "${OMARCHY_PATH:-/usr/share/omarchy}/version" 2>/dev/null || true)" \
+    --arg timezone "$tz" \
+    --arg hostname "$(hostnamectl hostname 2>/dev/null || cat /etc/hostname 2>/dev/null || true)" \
+    --arg kernel "$(uname -r)" \
+    --arg cpu "$(lscpu 2>/dev/null | awk -F': +' '/^Model name/ { print $2 }' | sort -u | paste -sd/ || true)" \
+    --arg machine "$(tr -d '\0' </sys/firmware/devicetree/base/model 2>/dev/null || cat /sys/class/dmi/id/product_name 2>/dev/null || true)" \
+    --arg memory "$(awk '/MemTotal/ { printf "%.0f GB", $2 / 1048576 }' /proc/meminfo 2>/dev/null || true)" \
+    --arg brightness "$(omarchy-brightness-display 2>/dev/null || true)" \
+    --arg roundness "$(sed -n 's/^[[:space:]]*roundness[[:space:]]*=[[:space:]]*\([0-9]\+\).*/\1/p' "$state/rounding.conf" 2>/dev/null | head -1)" \
+    --argjson laptop "$( [[ -n $(ls /sys/class/power_supply/*/type 2>/dev/null | xargs -r grep -l Battery 2>/dev/null) ]] && echo true || echo false)" \
+    '$ARGS.named'
+}
+
+# ---------------------------------------------------------------- tweaks
+
+tweaks() {
+  "$installer" --json
+}
+
+tweak() {
+  local action="$1" name="$2"
+  [[ $name =~ ^[a-z0-9-]+$ ]] || die "bad tweak: $name"
+  # No terminal: questions take their defaults; sudo steps ask through polkit.
+  case $action in
+    add) SUDO=pkexec "$installer" --add "$name" </dev/null ;;
+    remove) SUDO=pkexec "$installer" --remove "$name" </dev/null ;;
+    *) die "tweak add|remove <name>" ;;
+  esac
+}
+
+# ---------------------------------------------------------------- dock and bar
+
+dock_set() {
+  local key="$1" value="$2"
+  shell_edit '.plugins |= map(if .id == "witcher.dock" then (if $v == null then del(.[$k]) else .[$k] = $v end) else . end)' \
+    --arg k "$key" --argjson v "$value"
+}
+
+bar_set() {
+  local key="$1" value="$2"
+  case $key in
+    position) omarchy-bar position "$(jq -r . <<<"$value")" >/dev/null ;;
+    transparent) omarchy-bar transparent "$(jq -r . <<<"$value")" >/dev/null ;;
+    *) die "bar-set position|transparent" ;;
+  esac
+}
+
+# ---------------------------------------------------------------- input
+
+input_keys=(kb_layout kb_variant kb_options repeat_rate repeat_delay numlock_by_default sensitivity accel_profile
+  touchpad:natural_scroll touchpad:tap-to-click touchpad:clickfinger_behavior touchpad:scroll_factor
+  touchpad:disable_while_typing touchpad:drag_3fg)
+
+input() {
+  local key json='{}' out value
+  for key in "${input_keys[@]}"; do
+    out=$(hyprctl getoption "input:$key" -j 2>/dev/null || echo '{}')
+    value=$(jq -c 'if has("str") then (if .str == "[[EMPTY]]" then "" else .str end) elif has("bool") then .bool
+      elif has("float") then .float elif has("int") then .int else null end' <<<"$out" 2>/dev/null || echo null)
+    json=$(jq -c --arg k "$key" --argjson v "$value" '.[$k] = $v' <<<"$json")
+  done
+  echo "$json"
+}
+
+# key is like repeat_rate or touchpad:natural_scroll; value is JSON.
+input_set() {
+  local key="$1" value="$2" json path lua
+  json=$(settings_read)
+  if [[ $key == touchpad:* ]]; then
+    # Lua spells tap-to-click as tap_to_click.
+    path=$(tr - _ <<<"${key#touchpad:}")
+    json=$(jq --arg k "$path" --argjson v "$value" '.input.touchpad[$k] = $v' <<<"$json")
+    lua="{ input = { touchpad = { $path = $(lua_value "$value") } } }"
+  else
+    json=$(jq --arg k "$key" --argjson v "$value" '.input[$k] = $v' <<<"$json")
+    lua="{ input = { $key = $(lua_value "$value") } }"
+  fi
+  settings_write "$json"
+  hyprctl eval "hl.config($lua)" >/dev/null
+}
+
+# Several top-level input settings at once (JSON object), applied together
+# (kb_layout and kb_variant must change in one go).
+input_set_many() {
+  local values="$1" json
+  json=$(settings_read | jq --argjson v "$values" '.input = ((.input // {}) + $v)')
+  settings_write "$json"
+  hyprctl eval "hl.config({ input = $(lua_value "$values") })" >/dev/null
+}
+
+# ---------------------------------------------------------------- windows
+
+# floating: new windows open floating; tiled: Omarchy's default. Window
+# rules only add up while Hyprland runs, so it reloads to drop the old one.
+window_mode() {
+  local mode="$1" json
+  case $mode in
+    floating) json=$(settings_read | jq '.windows.floating = true') ;;
+    tiled) json=$(settings_read | jq 'del(.windows.floating) | if .windows == {} then del(.windows) else . end') ;;
+    *) die "window-mode floating|tiled" ;;
+  esac
+  settings_write "$json"
+  hyprctl reload >/dev/null
+}
+
+# ---------------------------------------------------------------- shortcuts
+
+binds() {
+  hyprctl binds -j
+}
+
+# Keys as Hyprland spells them: "SUPER + SHIFT + T".
+shortcut_add() {
+  local keys="$1" command="$2" description="${3:-$2}" json
+  [[ -n $keys && -n $command ]] || die "shortcut-add <keys> <command> [description]"
+  json=$(settings_read | jq --arg k "$keys" --arg c "$command" --arg d "$description" \
+    '.shortcuts = ((.shortcuts // []) | map(select(.keys != $k)) + [{keys: $k, command: $c, description: $d}])')
+  settings_write "$json"
+  hyprctl eval "hl.unbind($(jq -n --arg k "$keys" '$k'))" >/dev/null 2>&1 || true
+  hyprctl eval "hl.bind($(jq -n --arg k "$keys" '$k'), hl.dsp.exec_cmd($(jq -n --arg c "$command" '$c')), { description = $(jq -n --arg d "$description" '$d') })" >/dev/null
+}
+
+shortcut_remove() {
+  local keys="$1" json
+  json=$(settings_read | jq --arg k "$keys" '.shortcuts = ((.shortcuts // []) | map(select(.keys != $k)))')
+  settings_write "$json"
+  hyprctl eval "hl.unbind($(jq -n --arg k "$keys" '$k'))" >/dev/null 2>&1 || true
+}
+
+# ---------------------------------------------------------------- lists
+
+xkb() {
+  local lst=/usr/share/X11/xkb/rules/evdev.lst
+  [[ -r $lst ]] || { echo '{"layouts":[],"variants":[],"options":[]}'; return; }
+  awk '
+    /^! / { section = $2; next }
+    NF == 0 { next }
+    section == "layout" { code = $1; $1 = ""; sub(/^ +/, ""); printf "L\t%s\t%s\n", code, $0 }
+    section == "variant" { code = $1; lay = $2; sub(/:$/, "", lay); $1 = ""; $2 = ""; sub(/^ +/, ""); printf "V\t%s\t%s\t%s\n", lay, code, $0 }
+    section == "option" { code = $1; $1 = ""; sub(/^ +/, ""); if (code ~ /:/) printf "O\t%s\t%s\n", code, $0 }
+  ' "$lst" | jq -Rn '
+    [inputs | split("\t")] as $rows
+    | { layouts: [$rows[] | select(.[0] == "L") | {code: .[1], name: .[2]}],
+        variants: [$rows[] | select(.[0] == "V") | {layout: .[1], code: .[2], name: .[3]}],
+        options: [$rows[] | select(.[0] == "O") | {code: .[1], name: .[2]}] }'
+}
+
+timezones() {
+  timedatectl list-timezones 2>/dev/null | jq -Rn '[inputs]'
+}
+
+themes() {
+  local path="${OMARCHY_PATH:-/usr/share/omarchy}/themes" dir name list='[]'
+  for dir in "$HOME/.config/omarchy/themes"/* "$path"/*; do
+    [[ -d $dir ]] || continue
+    name=$(basename "$dir")
+    list=$(jq -c --arg id "$name" --arg preview "$( [[ -f $dir/preview.png ]] && echo "$dir/preview.png" || true)" \
+      'if any(.[]; .id == $id) then . else . + [{id: $id, preview: $preview}] end' <<<"$list")
+  done
+  jq 'sort_by(.id)' <<<"$list"
+}
+
+backgrounds() {
+  local theme dirs=() f
+  theme=$(cat "$HOME/.local/state/omarchy/current/theme.name" 2>/dev/null || true)
+  dirs=("$HOME/.local/state/omarchy/current/theme/backgrounds" "$HOME/.config/omarchy/backgrounds/$theme")
+  for f in "${dirs[@]}"; do
+    [[ -d $f ]] && find -L "$f" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) \
+      -exec readlink -f {} \; 2>/dev/null
+  done | sort -u | jq -Rn '[inputs]'
+}
+
+fonts() {
+  omarchy-font-list 2>/dev/null | jq -Rn '[inputs | select(length > 0)]'
+}
+
+monitors() {
+  hyprctl monitors all -j
+}
+
+monitors_save() {
+  "$repo/monitors/monitor-setup" --save
+}
+
+# ---------------------------------------------------------------- tweak settings
+
+corners_set() {
+  local percent="$1"
+  [[ $percent =~ ^[0-9]+$ ]] && (( percent <= 100 )) || die "corners-set 0-100"
+  mkdir -p "$state"
+  printf 'roundness=%s\n' "$percent" >"$state/rounding.conf"
+  hyprctl eval "hl.config({ decoration = { rounding = $(( (percent * 32 + 50) / 100 )) } })" >/dev/null
+}
+
+border() {
+  "$plugins/witcher.border-colors/bin/border-colors" "$@"
+}
+
+notify_seconds() {
+  [[ $1 =~ ^[0-9]+$ ]] || die "notify-seconds <n>"
+  shell_edit '.plugins |= map(if .id == "witcher.notify-timeout" then .seconds = ($n | tonumber) else . end)' --arg n "$1"
+}
+
+suspend_minutes() {
+  [[ $1 =~ ^[0-9]+$ ]] || die "suspend-minutes <n>"
+  shell_edit '.plugins |= map(if .id == "witcher.idle-suspend" then .minutes = ($n | tonumber) else . end)' --arg n "$1"
+}
+
+# ---------------------------------------------------------------- main
+
+case "${1:-}" in
+  status) status ;;
+  tweaks) tweaks ;;
+  tweak) shift; tweak "$@" ;;
+  dock-set) shift; dock_set "$@" ;;
+  bar-set) shift; bar_set "$@" ;;
+  input) input ;;
+  input-set) shift; input_set "$@" ;;
+  input-set-many) shift; input_set_many "$@" ;;
+  window-mode) shift; window_mode "$@" ;;
+  binds) binds ;;
+  shortcut-add) shift; shortcut_add "$@" ;;
+  shortcut-remove) shift; shortcut_remove "$@" ;;
+  shortcuts) settings_read | jq '.shortcuts // []' ;;
+  xkb) xkb ;;
+  timezones) timezones ;;
+  themes) themes ;;
+  backgrounds) backgrounds ;;
+  fonts) fonts ;;
+  monitors) monitors ;;
+  monitors-save) monitors_save ;;
+  corners-set) shift; corners_set "$@" ;;
+  border) shift; border "$@" ;;
+  notify-seconds) shift; notify_seconds "$@" ;;
+  suspend-minutes) shift; suspend_minutes "$@" ;;
+  write-lua) write_lua ;;
+  *) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac

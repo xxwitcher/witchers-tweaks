@@ -47,8 +47,9 @@ plugins="home/.config/omarchy/plugins"
 # witchers-tweaks.lua on, and @<step> is one of the steps below (each has an
 # apply, a remove and a check).
 tweaks=(
+  "settings|Apps|Settings app like macOS's System Settings, for everything Omarchy and these tweaks let you change|home/.local/bin/witcher-settings home/.local/share/applications/witcher-settings.desktop home/.local/share/icons/hicolor/scalable/apps/witcher-settings.svg hypr:settings-app @settings-pin"
   "gaps|Look|No gaps between windows|hypr:no-gaps"
-  "border|Look|Spinning gradient border on windows, popups and notifications, in colors you pick|$plugins/witcher.border-colors/Picker.qml $plugins/witcher.border-colors/manifest.json $plugins/witcher.border-colors/bin/border-colors hypr:gradient-border @border-shell @border-picker @border-spin"
+  "border|Look|Animated gradient border on windows, popups and notifications, in colors you pick|$plugins/witcher.border-colors/Picker.qml $plugins/witcher.border-colors/manifest.json $plugins/witcher.border-colors/bin/border-colors hypr:gradient-border @border-shell @border-picker @border-spin"
   "wsfade|Look|Workspaces slide in with a fade instead of switching instantly|hypr:workspace-fade"
   "columns|Look|Scrolling layout: one column per screen instead of two|hypr:wide-columns"
   "rounding|Look|Window corner rounding on a % slider (the same scale as the dock's)|hypr:window-rounding @window-rounding"
@@ -64,13 +65,13 @@ tweaks=(
   "agentchat|Top bar|Agent widget with your default agent's real terminal inside it|$plugins/witcher.agents/Panel.qml $plugins/witcher.agents/Main.qml $plugins/witcher.agents/Agent.qml $plugins/witcher.agents/manifest.json $plugins/witcher.agents/README.md $plugins/witcher.agents/bin/terminal-colors $plugins/witcher.agents/assets/claude.svg $plugins/witcher.agents/assets/codex.svg $plugins/witcher.agents/assets/codex-light.svg $plugins/witcher.agents/assets/fireworks.svg @agent-terminal @agent-bar"
   "notifytimeout|Notifications|Every notification leaves the screen after a few seconds (5 by default), critical ones too|$plugins/witcher.notify-timeout/Service.qml $plugins/witcher.notify-timeout/manifest.json @notify-timeout"
   "overview|Windows|Mission Control-style overview of workspaces and windows (3-finger swipe up)|$plugins/witcher.overview/Overview.qml $plugins/witcher.overview/manifest.json $plugins/witcher.overview/bin/focus-window @overview hypr:overview-gesture"
-  "dock|Windows|macOS-style dock: Apps view, kept, running and recent apps, drag to arrange, Downloads, Trash, SUPER+M minimizes|$plugins/witcher.dock/Dock.qml $plugins/witcher.dock/manifest.json $plugins/witcher.dock/bin/dock $plugins/witcher.dock/AppsPanel.qml @dock hypr:dock-minimize"
+  "dock|Windows|macOS-style dock: Apps view, kept, running and recent apps, drag to arrange, Downloads, Trash, SUPER+M minimizes|$plugins/witcher.dock/Dock.qml $plugins/witcher.dock/MinimizeEffect.qml $plugins/witcher.dock/manifest.json $plugins/witcher.dock/bin/dock $plugins/witcher.dock/AppsPanel.qml @dock hypr:dock-minimize"
   "suspend|Power|No screensaver; suspend after a chosen idle time (1-60 min)|$plugins/witcher.idle-suspend/Service.qml $plugins/witcher.idle-suspend/manifest.json @idle-suspend"
   "smidriver|Hardware|Silicon Motion SM77x USB display adapter driver (evdi-dkms based, with a crash fix)|@smi-driver"
   "touchbar|Hardware|Touch Bar layout and screenshot key (MacBooks with tiny-dfr)|system/etc/tiny-dfr"
 )
 
-categories=("Look" "Input" "Keybindings" "Top bar" "Notifications" "Windows" "Power" "Hardware")
+categories=("Apps" "Look" "Input" "Keybindings" "Top bar" "Notifications" "Windows" "Power" "Hardware")
 
 # Settings --configure offers: name | description | function | tweak. With a
 # tweak it shows only while that tweak is installed; without one, always.
@@ -371,7 +372,7 @@ border_template_ours() {
 stop_border_spin() {
   if command -v hyprctl >/dev/null && hyprctl version >/dev/null 2>&1; then
     hyprctl eval 'if _G.witcher_border_timer then _G.witcher_border_timer:set_enabled(false); _G.witcher_border_timer = nil end; _G.witcher_border_tick = nil' >/dev/null
-    echo "stopped  spinning border"
+    echo "stopped  animated border"
     reload_hypr=true
   fi
 }
@@ -685,6 +686,8 @@ dock_settings=(
   "size|DOCK_SIZE|Size|choice|48|Medium (48 px);32|Smallest (32 px);40|Small (40 px);56|Large (56 px);64|Larger (64 px);80|Largest (80 px)"
   "magnification|DOCK_MAGNIFICATION|Magnification|choice|0|Off;64|Small (64 px);80|Medium (80 px);96|Large (96 px);128|Largest (128 px)"
   "position|DOCK_POSITION|Position on screen|choice|bottom|Bottom;left|Left;right|Right"
+  "minimizeEffect|DOCK_MINIMIZE_EFFECT|Minimize windows using|choice|genie|Genie effect;scale|Scale effect;fade|Fade;slide|Slide down;none|No animation"
+  "minimizeSpeed|DOCK_MINIMIZE_SPEED|Minimize animation speed|slider|50:200:10:100"
   "minimize|DOCK_MINIMIZE|Minimize windows into application icon|choice|false|No: minimized windows get their own place;true|Yes: into their app's icon"
   "hide|DOCK_HIDE|Automatically hide and show the Dock|choice|auto|Yes: until the cursor touches the screen edge;never|No: always shown, windows tile around it;smart|Only while a window would sit under it"
   "animate|DOCK_ANIMATE|Animate opening applications|choice|true|Yes: icons bounce while their app opens;false|No"
@@ -922,10 +925,26 @@ dock_env_settings() {
   return $any
 }
 
-# Desktop entry ids for a first dock: the default browser, the default
-# terminal and Files, the ones that exist.
+# The Settings app goes first in the dock (when there is one), next to the
+# Apps icon; if it's already there it stays where it was put.
+pin_settings() {
+  if shell_config_has 'any(.plugins[]?; .id == "witcher.dock")'; then
+    edit_shell_config "Settings in the dock" '.plugins |= map(if .id == "witcher.dock"
+      then .pinned = (if any(.pinned[]?; . == "witcher-settings") then .pinned else ["witcher-settings"] + (.pinned // []) end) else . end)'
+  else
+    echo "ok       no dock to pin Settings to"
+  fi
+}
+
+unpin_settings() {
+  edit_shell_config "Settings out of the dock" '.plugins |= map(if .id == "witcher.dock"
+    then .pinned = ((.pinned // []) | map(select(. != "witcher-settings"))) else . end)'
+}
+
+# Desktop entry ids for a first dock: Settings (when that tweak is in), the
+# default browser, the default terminal and Files, the ones that exist.
 dock_default_pins() {
-  local ids=() id dir
+  local ids=(witcher-settings) id dir
   id=$(xdg-settings get default-web-browser 2>/dev/null || true)
   [[ -n $id ]] && ids+=("${id%.desktop}")
   id=$(xdg-terminal-exec --print-id 2>/dev/null | head -1 || true)
@@ -1267,7 +1286,7 @@ step() {
     remove:@border-picker) disable_service witcher.border-colors "no border color picker" ;;
     check:@border-picker) service_enabled witcher.border-colors ;;
 
-    apply:@border-spin) echo "ok       spinning border (witchers-tweaks.lua runs it)" ;;
+    apply:@border-spin) echo "ok       animated border (witchers-tweaks.lua runs it)" ;;
     remove:@border-spin) stop_border_spin ;;
     check:@border-spin) return 2 ;;
 
@@ -1310,6 +1329,10 @@ step() {
     apply:@window-rounding) setup_window_rounding ;;
     remove:@window-rounding) remove_window_rounding ;;
     check:@window-rounding) [[ -f $rounding_conf ]] ;;
+
+    apply:@settings-pin) pin_settings ;;
+    remove:@settings-pin) unpin_settings ;;
+    check:@settings-pin) return 2 ;;
 
     apply:@dock) setup_dock ;;
     remove:@dock) disable_service witcher.dock "no dock" ;;
@@ -1558,6 +1581,21 @@ restart_shell=false
 case "${1:-}" in
   --monitors)
     exec "$monitor_setup"
+    ;;
+  --json)
+    # Every tweak this machine can use, for the Settings app.
+    for name in "${names[@]}"; do
+      t=$(tweak_line "$name")
+      conf=""
+      for entry in "${configurable[@]}"; do
+        [[ $(field "$entry" 4) == "$name" ]] && conf+="$(field "$entry" 1) "
+      done
+      jq -nc --arg name "$name" --arg category "$(field "$t" 2)" --arg description "$(field "$t" 3)" \
+        --arg state "$(tweak_state "$name")" --arg configure "${conf% }" \
+        '{name: $name, category: $category, description: $description, state: $state,
+          configure: ($configure | split(" ") | map(select(length > 0)))}'
+    done | jq -s .
+    exit 0
     ;;
   --list)
     for category in "${categories[@]}"; do
