@@ -1,9 +1,10 @@
 # Witcher's Tweaks
 
 Optional tweaks for [Omarchy](https://omarchy.org): a Mission Control-style
-window overview, a notification bell, a spinning gradient border in colors you
-pick, macOS-like swipes, suspend on idle and more. Every tweak can be added,
-configured and safely removed on its own, from the terminal or from
+window overview, a macOS-style dock with an app drawer, a notification bell, a
+spinning gradient border in colors you pick, macOS-like swipes, suspend on idle
+and more. Every tweak can be added, configured and safely removed on its own,
+from the terminal or from
 **Setup > Witcher's Tweaks** in the Omarchy menu.
 
 Nothing is replaced wholesale: your own Hyprland files (`input.lua`,
@@ -19,8 +20,9 @@ an issue if it does.
   <a href="docs/screenshots/overview.png"><img src="docs/screenshots/overview.png" height="200" alt="Mission Control-style overview: workspaces along the top, the hovered one's windows below"></a>
   <a href="docs/screenshots/notifications.png"><img src="docs/screenshots/notifications.png" height="200" alt="Notification bell with recent notifications and Dismiss all"></a>
   <a href="docs/screenshots/agentchat.png"><img src="docs/screenshots/agentchat.png" height="200" alt="Agent widget with usage limits over the agent's own terminal"></a>
+  <a href="docs/screenshots/dock_and_app_drawer.png"><img src="docs/screenshots/dock_and_app_drawer.png" height="200" alt="macOS-style dock with the Apps drawer open above it: every app in rows of five with a search field"></a>
   <br>
-  <sub>Window overview · Notification bell · Agent widget (click for full size)</sub>
+  <sub>Window overview · Notification bell · Agent widget · Dock and app drawer (click for full size)</sub>
 </p>
 
 ## Install
