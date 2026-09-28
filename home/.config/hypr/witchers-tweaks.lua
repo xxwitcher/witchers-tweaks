@@ -38,6 +38,15 @@ if on("wide-columns") then
 end
 
 -- Workspaces slide in with a fade instead of switching instantly.
+-- Window corners rounded by the px in rounding.conf (Setup > Witcher's
+-- Tweaks > Configure > Corners).
+if on("window-rounding") then
+  for _, line in ipairs(read_lines(state .. "/rounding.conf")) do
+    local px = tonumber(line:match("^%s*rounding%s*=%s*(%d+)%s*$"))
+    if px then hl.config({ decoration = { rounding = px } }) end
+  end
+end
+
 if on("workspace-fade") then
   hl.animation({ leaf = "workspaces", enabled = true, speed = 4, bezier = "easeOutQuint", style = "slidefade 20%" })
 end
@@ -157,6 +166,15 @@ end
 
 if on("bind-close") then
   o.bind("CTRL + Q", "Close window", hl.dsp.window.close())
+end
+
+-- ---------------------------------------------------------------- dock
+
+-- SUPER+M minimizes the focused window, like CMD+M on macOS: it goes to a
+-- hidden special workspace, and the dock shows it (or its app) to bring it
+-- back.
+if on("dock-minimize") then
+  o.bind("SUPER + M", "Minimize window", hl.dsp.window.move({ workspace = "special:minimized", follow = false }))
 end
 
 -- ---------------------------------------------------------------- top bar

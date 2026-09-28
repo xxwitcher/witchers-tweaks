@@ -41,7 +41,7 @@ lives in **Setup > Witcher's Tweaks** (right under Config): **Add**,
 ./install.sh                     # pick tweaks category by category
 ./install.sh --add [tweak...]    # add tweaks (asks which, from those not installed)
 ./install.sh --remove [tweak...] # remove tweaks (asks which, then confirms)
-./install.sh --configure [name]  # monitors, borders, suspend, notifications
+./install.sh --configure [name]  # monitors, borders, corners, suspend, notifications, dock
 ./install.sh --status            # which tweaks are installed
 ./install.sh --list              # every tweak, by category
 ./install.sh --all               # every tweak this machine can use
@@ -49,6 +49,8 @@ lives in **Setup > Witcher's Tweaks** (right under Config): **Add**,
 ./install.sh --monitors          # the interactive monitor setup
 SUSPEND_MINUTES=10 ./install.sh suspend            # without the question
 NOTIFY_SECONDS=8 ./install.sh --configure notifications
+DOCK_SIZE=56 DOCK_MAGNIFICATION=96 DOCK_TRANSPARENCY=20 ./install.sh --configure dock
+WINDOW_ROUNDING=10 ./install.sh rounding
 ```
 
 Keep the clone: installed files link back into it, and `git pull` updates
@@ -61,6 +63,7 @@ battery, the Touch Bar without tiny-dfr) aren't offered.
 |---|---|---|
 | Look | `gaps` | No gaps between windows |
 | Look | `border` | Spinning three-color gradient border on windows, bar popups, notifications and the lock screen; colors picked in Configure > Borders |
+| Look | `rounding` | Window corner rounding, 0 (sharp, Omarchy's default) to 24 px, set on a slider in Configure > Corners with a live preview |
 | Look | `wsfade` | Workspaces slide in with a fade instead of switching instantly |
 | Look | `columns` | Scrolling layout: one column per screen instead of two |
 | Input | `swapkeys` | Swap left Ctrl and left Super (right-hand keys stay) |
@@ -75,6 +78,7 @@ battery, the Touch Bar without tiny-dfr) aren't offered.
 | Top bar | `agentchat` | The agent widget with your default agent's real terminal inside it |
 | Notifications | `notifytimeout` | Every notification leaves after a few seconds (5 by default), critical ones too |
 | Windows | `overview` | Mission Control-style overview: workspaces along the top, the hovered one's windows below; 3-finger swipe up |
+| Windows | `dock` | A dock like macOS's: the Apps icon (a panel above the dock with every app in rows of five and a search field, like macOS's Apps view: type to search, arrows and Enter to open, drag an app onto the dock to keep it, right click for Keep in Dock, Open at Login and Remove), kept apps, then running and recently closed ones, then minimized windows, Downloads and the Trash. Drag icons to arrange them, drag a running app among the kept ones to keep it, drag a kept one out of the dock to remove it from the dock, or drop any app (from the dock or the Apps panel) on the Trash to uninstall it after a confirmation. Right click for the app's windows, Keep in Dock, Open at Login, Show All Windows, Hide and Quit. SUPER+M minimizes the focused window. Configure > Dock lists every setting with its current value; pick one to change it: macOS's Desktop & Dock settings (size, magnification, position, minimize into application icon, automatically hide and show or only when a window is under it, animate opening applications, indicators, recent apps), what clicking the app you're in does, dock and app drawer transparency and corner rounding (sliders with a live preview), and the dock's border: the windows' gradient, custom gradient colors, one solid color, or none |
 | Power | `suspend` | No screensaver; suspend after 1, 5, 10, 15, 30 or 60 idle minutes |
 | Hardware | `smidriver` | Silicon Motion SM77x USB display adapter driver, on evdi-dkms, with a crash fix |
 | Hardware | `touchbar` | Touch Bar layout and screenshot key (MacBooks running tiny-dfr) |

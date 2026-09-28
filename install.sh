@@ -5,7 +5,7 @@
 #   ./install.sh                     pick tweaks category by category
 #   ./install.sh --add [tweak...]    add tweaks (asks which, from those not installed)
 #   ./install.sh --remove [tweak...] remove tweaks (asks which, then confirms)
-#   ./install.sh --configure [name]  change settings (monitors, borders, suspend, notifications)
+#   ./install.sh --configure [name]  change settings (monitors, borders, corners, suspend, notifications, dock)
 #   ./install.sh --status            which tweaks are installed
 #   ./install.sh --list              list the tweaks
 #   ./install.sh --all               add every tweak this machine can use
@@ -51,6 +51,7 @@ tweaks=(
   "border|Look|Spinning gradient border on windows, popups and notifications, in colors you pick|$plugins/witcher.border-colors/Picker.qml $plugins/witcher.border-colors/manifest.json $plugins/witcher.border-colors/bin/border-colors hypr:gradient-border @border-shell @border-picker @border-spin"
   "wsfade|Look|Workspaces slide in with a fade instead of switching instantly|hypr:workspace-fade"
   "columns|Look|Scrolling layout: one column per screen instead of two|hypr:wide-columns"
+  "rounding|Look|Window corner rounding you choose on a slider, sharp to round|hypr:window-rounding @window-rounding"
   "swapkeys|Input|Swap left Ctrl and left Super (the right-hand keys stay)|hypr:swap-ctrl-super"
   "swipe|Input|macOS-like 3-finger swipe between workspaces|hypr:workspace-swipe"
   "bindbrowser|Keybindings|SUPER+B opens the browser (instead of SUPER+SHIFT+B)|hypr:bind-browser"
@@ -63,6 +64,7 @@ tweaks=(
   "agentchat|Top bar|Agent widget with your default agent's real terminal inside it|$plugins/witcher.agents/Panel.qml $plugins/witcher.agents/Main.qml $plugins/witcher.agents/Agent.qml $plugins/witcher.agents/manifest.json $plugins/witcher.agents/README.md $plugins/witcher.agents/bin/terminal-colors $plugins/witcher.agents/assets/claude.svg $plugins/witcher.agents/assets/codex.svg $plugins/witcher.agents/assets/codex-light.svg $plugins/witcher.agents/assets/fireworks.svg @agent-terminal @agent-bar"
   "notifytimeout|Notifications|Every notification leaves the screen after a few seconds (5 by default), critical ones too|$plugins/witcher.notify-timeout/Service.qml $plugins/witcher.notify-timeout/manifest.json @notify-timeout"
   "overview|Windows|Mission Control-style overview of workspaces and windows (3-finger swipe up)|$plugins/witcher.overview/Overview.qml $plugins/witcher.overview/manifest.json $plugins/witcher.overview/bin/focus-window @overview hypr:overview-gesture"
+  "dock|Windows|macOS-style dock: Apps view, kept, running and recent apps, drag to arrange, Downloads, Trash, SUPER+M minimizes|$plugins/witcher.dock/Dock.qml $plugins/witcher.dock/manifest.json $plugins/witcher.dock/bin/dock $plugins/witcher.dock/AppsPanel.qml @dock hypr:dock-minimize"
   "suspend|Power|No screensaver; suspend after a chosen idle time (1-60 min)|$plugins/witcher.idle-suspend/Service.qml $plugins/witcher.idle-suspend/manifest.json @idle-suspend"
   "smidriver|Hardware|Silicon Motion SM77x USB display adapter driver (evdi-dkms based, with a crash fix)|@smi-driver"
   "touchbar|Hardware|Touch Bar layout and screenshot key (MacBooks with tiny-dfr)|system/etc/tiny-dfr"
@@ -75,8 +77,10 @@ categories=("Look" "Input" "Keybindings" "Top bar" "Notifications" "Windows" "Po
 configurable=(
   "monitors|Resolution, scale, rotation and position of each screen|configure_monitors|"
   "borders|Colors of the window, popup and notification borders (color picker)|configure_borders|border"
+  "corners|How round window corners are (slider)|configure_window_rounding|rounding"
   "suspend|How long idle before suspending|configure_idle_suspend|suspend"
   "notifications|How long notifications stay on screen|configure_notify_timeout|notifytimeout"
+  "dock|Size, magnification, position, hiding, transparency, border and more, one at a time|configure_dock|dock"
 )
 
 field() { cut -d'|' -f"$2" <<<"$1"; }
@@ -670,6 +674,393 @@ configure_notify_timeout() {
   enable_service witcher.notify-timeout "{\"seconds\":$seconds}" "notifications leave after ${seconds}s"
 }
 
+# ---------------------------------------------------------------- dock
+
+# Each setting: key | environment override | label | kind | spec.
+#   choice  spec is value|label;value|label... (the first is the default)
+#   slider  spec is min:max:step[:default] (a percentage, 0 by default)
+#   border  the dock's border: the windows' gradient, custom colors, solid, none
+# Size to Show suggested and recent apps are macOS's Desktop & Dock options.
+dock_settings=(
+  "size|DOCK_SIZE|Size|choice|48|Medium (48 px);32|Smallest (32 px);40|Small (40 px);56|Large (56 px);64|Larger (64 px);80|Largest (80 px)"
+  "magnification|DOCK_MAGNIFICATION|Magnification|choice|0|Off;64|Small (64 px);80|Medium (80 px);96|Large (96 px);128|Largest (128 px)"
+  "position|DOCK_POSITION|Position on screen|choice|bottom|Bottom;left|Left;right|Right"
+  "minimize|DOCK_MINIMIZE|Minimize windows into application icon|choice|false|No: minimized windows get their own place;true|Yes: into their app's icon"
+  "hide|DOCK_HIDE|Automatically hide and show the Dock|choice|auto|Yes: until the cursor touches the screen edge;never|No: always shown, windows tile around it;smart|Only while a window would sit under it"
+  "animate|DOCK_ANIMATE|Animate opening applications|choice|true|Yes: icons bounce while their app opens;false|No"
+  "indicators|DOCK_INDICATORS|Show indicators for open applications|choice|true|Yes: a dot under running apps;false|No"
+  "recents|DOCK_RECENTS|Show suggested and recent apps in Dock|choice|true|Yes: after a divider;false|No"
+  "click|DOCK_CLICK|Clicking the app you're in|choice|cycle|Goes to its next window;focus|Stays on its last used window"
+  "transparency|DOCK_TRANSPARENCY|Dock transparency|slider|0:90:5"
+  "appsTransparency|DOCK_APPS_TRANSPARENCY|App drawer transparency|slider|0:90:5"
+  "roundness|DOCK_ROUNDNESS|Corner rounding (dock and app drawer)|slider|0:100:5:60"
+  "border|DOCK_BORDER|Dock border|border|windows|Same gradient as the windows;custom|Custom gradient colors;solid|One solid color (no gradient);none|No border"
+)
+
+dock_field() { cut -d'|' -f"$2" <<<"$1"; }
+dock_spec() { cut -d'|' -f5- <<<"$1"; }
+
+# A saved dock setting as text ("" when unset). Not service_setting: its //
+# would read a saved false as unset.
+dock_get() {
+  jq -r --arg k "$1" 'first(.plugins[]? | select(.id == "witcher.dock") | .[$k]) | if . == null then "" elif type == "array" then join(" ") else tostring end' "$shell_config" 2>/dev/null || true
+}
+
+# Saves a setting (a JSON value, or null to remove it) without a word, for
+# live previews.
+dock_put() {
+  local key="$1" value="$2" next
+  [[ -f $shell_config ]] || return 0
+  next=$(jq --arg k "$key" --argjson v "$value" \
+    '.plugins |= map(if .id == "witcher.dock" then (if $v == null then del(.[$k]) else .[$k] = $v end) else . end)' "$shell_config") || return 1
+  printf '%s\n' "$next" >"$shell_config.tmp.$stamp"
+  mv "$shell_config.tmp.$stamp" "$shell_config"
+}
+
+# JSON for a setting's text value: numbers and true/false as such.
+dock_json() {
+  if [[ $1 =~ ^([0-9]+|true|false)$ ]]; then echo "$1"; else jq -n --arg v "$1" '$v'; fi
+}
+
+# Shows the dock (or "apps": the App drawer) while a setting is changed, so
+# the change can be seen; "off" hides it again.
+dock_peek() {
+  if [[ $1 == off ]]; then dock_put peek null; else dock_put peek "\"$1\""; fi
+}
+
+# The label of a setting's current value, for the menu.
+dock_current_label() {
+  local entry="$1" key kind spec current pair pairs=()
+  key=$(dock_field "$entry" 1)
+  kind=$(dock_field "$entry" 4)
+  spec=$(dock_spec "$entry")
+  current=$(dock_get "$key")
+  case $kind in
+    slider)
+      local default
+      IFS=':' read -r _ _ _ default <<<"$spec"
+      echo "${current:-${default:-0}}%"
+      ;;
+    border|choice)
+      IFS=';' read -ra pairs <<<"$spec"
+      [[ -n $current ]] || current="${pairs[0]%%|*}"
+      for pair in "${pairs[@]}"; do
+        if [[ ${pair%%|*} == "$current" ]]; then
+          local label="${pair#*|}"
+          [[ $kind == border && $current =~ ^(custom|solid)$ ]] && label="$label ($(dock_get borderColors))"
+          echo "$label"
+          return
+        fi
+      done
+      echo "$current"
+      ;;
+  esac
+}
+
+# A colored block for a hex color, in terminals that do true color.
+swatch() {
+  local c=${1#\#}
+  printf '\e[48;2;%d;%d;%dm      \e[0m' "0x${c:0:2}" "0x${c:2:2}" "0x${c:4:2}"
+}
+
+# Asks for a hex color; prints it (#rrggbb), or the current one when the
+# answer isn't a color.
+ask_color() {
+  local question="$1" current="$2" answer
+  if command -v gum >/dev/null; then
+    answer=$(gum input --header "$question (6 hex digits)" --value "$current" --placeholder "#a855f7") || answer=$current
+  else
+    read -rp "$question (6 hex digits) [$current] " answer </dev/tty || answer=$current
+  fi
+  answer=${answer#\#}
+  if [[ $answer =~ ^[0-9a-fA-F]{6}$ ]]; then echo "#${answer,,}"; else echo "$current"; fi
+}
+
+# A slider in the terminal: left/right (or h/l) move it and each step runs
+# the preview command with the value added, so it shows straight away; Enter
+# keeps it, Esc puts the start value back. Prints the value.
+#   term_slider <label> <min> <max> <step> <value> <unit> <preview command...>
+term_slider() {
+  local label="$1" min="$2" max="$3" step="$4" value="$5" unit="$6"
+  shift 6
+  local original=$value k rest width=30 filled bar i
+  printf '%s   ←/→ change, Enter keeps, Esc cancels\n' "$label" >/dev/tty
+  tput civis 2>/dev/null >/dev/tty || true
+  while true; do
+    filled=$(( (value - min) * width / (max - min) ))
+    bar=""
+    for (( i = 0; i < width; i++ )); do if (( i < filled )); then bar+="█"; else bar+="░"; fi; done
+    printf '\r  %s %3d%s  ' "$bar" "$value" "$unit" >/dev/tty
+    IFS= read -rsn1 k </dev/tty || break
+    case $k in
+      $'\e')
+        rest=""
+        read -rsn2 -t 0.05 rest </dev/tty || true
+        case $rest in
+          "[D") k=left ;;
+          "[C") k=right ;;
+          "") value=$original; "$@" "$value"; break ;;
+          *) continue ;;
+        esac
+        ;;
+      h) k=left ;;
+      l) k=right ;;
+      "") break ;;
+      *) continue ;;
+    esac
+    if [[ $k == left ]]; then value=$(( value - step < min ? min : value - step )); fi
+    if [[ $k == right ]]; then value=$(( value + step > max ? max : value + step )); fi
+    "$@" "$value" >/dev/null 2>&1 || true
+  done
+  tput cnorm 2>/dev/null >/dev/tty || true
+  printf '\n' >/dev/tty
+  echo "$value"
+}
+
+# A dock percentage, on the terminal slider, previewed on the dock (or the
+# App drawer for its own setting).
+#   dock_slider <key> <label> <min> <max> <step> [default]
+dock_slider() {
+  local key="$1" label="$2" min="$3" max="$4" step="$5" default="${6:-$3}" value
+  [[ -t 0 ]] || return 0
+  value=$(dock_get "$key")
+  [[ $value =~ ^[0-9]+$ ]] || value=$default
+  [[ $key == appsTransparency ]] && dock_peek apps || dock_peek dock
+  value=$(term_slider "$label" "$min" "$max" "$step" "$value" "%" dock_put "$key")
+  dock_put "$key" "$value"
+  dock_peek off
+  echo "set      $label: $value%"
+}
+
+# The dock's border: which kind, then its colors (previewed on the dock).
+dock_border() {
+  local entry="$1" mode colors=() saved=() c i names=("First" "Second" "Third") window
+  mode=$(pick_labeled "Dock border" "$(dock_get border)" "$(dock_spec "$entry")")
+  dock_put border "$(dock_json "$mode")"
+  if [[ $mode == custom || $mode == solid ]]; then
+    read -ra saved <<<"$(dock_get borderColors)"
+    colors=("${saved[@]}")
+    # Start from the window border's colors.
+    if (( ${#colors[@]} < 3 )) && window=$("$border_colors" get 2>/dev/null); then
+      read -ra c <<<"$window"
+      colors=("#${c[0]}" "#${c[1]}" "#${c[2]}")
+    fi
+    (( ${#colors[@]} >= 3 )) || colors=("#c4b5fd" "#a855f7" "#da70d6")
+    dock_peek dock
+    local count=3
+    if [[ $mode == solid ]]; then
+      count=1
+      # A saved solid color, else the middle of the gradient.
+      if (( ${#saved[@]} == 1 )); then colors=("${saved[0]}"); else colors=("${colors[1]}"); fi
+    fi
+    for (( i = 0; i < count; i++ )); do
+      if [[ $mode == solid ]]; then
+        colors[i]=$(ask_color "Border color" "${colors[i]}")
+      else
+        colors[i]=$(ask_color "${names[i]} gradient color" "${colors[i]}")
+      fi
+      printf '  %s %s\n' "$(swatch "${colors[i]}")" "${colors[i]}" >/dev/tty
+      dock_put borderColors "$(printf '%s\n' "${colors[@]:0:count}" | jq -R . | jq -sc .)"
+    done
+    dock_peek off
+  fi
+  echo "set      Dock border: $(dock_current_label "$entry")"
+}
+
+# Asks for one setting and saves it.
+dock_ask() {
+  local entry="$1" key label kind value
+  key=$(dock_field "$entry" 1)
+  label=$(dock_field "$entry" 3)
+  kind=$(dock_field "$entry" 4)
+  case $kind in
+    choice)
+      value=$(pick_labeled "$label" "$(dock_get "$key")" "$(dock_spec "$entry")")
+      dock_put "$key" "$(dock_json "$value")"
+      echo "set      $label: $(dock_current_label "$entry")"
+      ;;
+    slider)
+      local min max step default
+      IFS=':' read -r min max step default <<<"$(dock_spec "$entry")"
+      dock_slider "$key" "$label" "$min" "$max" "$step" "$default"
+      ;;
+    border) dock_border "$entry" ;;
+  esac
+}
+
+# Settings given in the environment (DOCK_SIZE=64 and so on), checked and
+# saved. Returns 1 when there were none.
+dock_env_settings() {
+  local entry key env kind spec value any=1 allowed=() pairs=() pair min max step
+  for entry in "${dock_settings[@]}"; do
+    key=$(dock_field "$entry" 1)
+    env=$(dock_field "$entry" 2)
+    kind=$(dock_field "$entry" 4)
+    spec=$(dock_spec "$entry")
+    value=${!env:-}
+    [[ -n $value ]] || continue
+    any=0
+    if [[ $kind == slider ]]; then
+      IFS=':' read -r min max step _ <<<"$spec"
+      [[ $value =~ ^[0-9]+$ ]] && (( value >= min && value <= max )) || { echo "$env must be $min-$max" >&2; return 2; }
+    else
+      allowed=()
+      IFS=';' read -ra pairs <<<"$spec"
+      for pair in "${pairs[@]}"; do allowed+=("${pair%%|*}"); done
+      value=$(env_choice "$env" "$value" "${allowed[@]}") || return 2
+    fi
+    dock_put "$key" "$(dock_json "$value")"
+    echo "set      $(dock_field "$entry" 3): $(dock_current_label "$entry")"
+  done
+  if [[ -n ${DOCK_BORDER_COLORS:-} ]]; then
+    local list=() c
+    IFS=', ' read -ra list <<<"$DOCK_BORDER_COLORS"
+    for c in "${list[@]}"; do [[ ${c#\#} =~ ^[0-9a-fA-F]{6}$ ]] || { echo "DOCK_BORDER_COLORS: not a color: $c" >&2; return 2; }; done
+    dock_put borderColors "$(printf '#%s\n' "${list[@]#\#}" | jq -R . | jq -sc .)"
+    any=0
+  fi
+  return $any
+}
+
+# Desktop entry ids for a first dock: the default browser, the default
+# terminal and Files, the ones that exist.
+dock_default_pins() {
+  local ids=() id dir
+  id=$(xdg-settings get default-web-browser 2>/dev/null || true)
+  [[ -n $id ]] && ids+=("${id%.desktop}")
+  id=$(xdg-terminal-exec --print-id 2>/dev/null | head -1 || true)
+  [[ -n $id ]] && ids+=("${id%.desktop}")
+  ids+=(org.gnome.Nautilus)
+  local found=() data_dirs
+  IFS=':' read -ra data_dirs <<<"${XDG_DATA_HOME:-$HOME/.local/share}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+  for id in "${ids[@]}"; do
+    for dir in "${data_dirs[@]}"; do
+      if [[ -f $dir/applications/$id.desktop ]]; then
+        [[ " ${found[*]} " == *" $id "* ]] || found+=("$id")
+        break
+      fi
+    done
+  done
+  (( ${#found[@]} )) || { echo '[]'; return; }
+  printf '%s\n' "${found[@]}" | jq -R . | jq -sc .
+}
+
+# Adding the dock asks nothing: it starts from the defaults (and a few kept
+# apps), and Configure > Dock changes any one setting.
+setup_dock() {
+  local settings='{}'
+  if ! shell_config_has 'any(.plugins[]?; .id == "witcher.dock" and has("pinned"))'; then
+    settings=$(jq -c --argjson pins "$(dock_default_pins)" '{pinned: $pins}' <<<"{}")
+  fi
+  enable_service witcher.dock "$settings" "dock"
+  # "show" was a setting of the first version of the dock; it's gone.
+  edit_shell_config "dock settings tidy" '.plugins |= map(if .id == "witcher.dock" then del(.show, .peek) else . end)'
+  local status=0
+  dock_env_settings || status=$?
+  (( status == 2 )) && return 1
+  return 0
+}
+
+# A list of the settings with their current values: pick one, change it,
+# back to the list; Done (or Esc) leaves.
+configure_dock() {
+  local status=0
+  dock_env_settings || status=$?
+  (( status == 2 )) && return 1
+  (( status == 0 )) && return 0
+  if [[ ! -t 0 ]]; then
+    for entry in "${dock_settings[@]}"; do
+      printf '%-40s %s\n' "$(dock_field "$entry" 3)" "$(dock_current_label "$entry")"
+    done
+    return 0
+  fi
+  trap 'dock_peek off; tput cnorm 2>/dev/null >/dev/tty || true' EXIT
+  local entry labels choice i
+  while true; do
+    labels=()
+    for entry in "${dock_settings[@]}"; do
+      labels+=("$(printf '%-40s %s' "$(dock_field "$entry" 3)" "$(dock_current_label "$entry")")")
+    done
+    labels+=("Done")
+    if command -v gum >/dev/null; then
+      choice=$(gum choose --header "Dock settings: pick one to change" "${labels[@]}") || choice="Done"
+    else
+      echo "Dock settings:" >/dev/tty
+      for i in "${!labels[@]}"; do echo "  $((i + 1))) ${labels[i]}" >/dev/tty; done
+      read -rp "Number: " i </dev/tty || i=""
+      choice="Done"
+      [[ $i =~ ^[0-9]+$ ]] && (( i >= 1 && i <= ${#labels[@]} )) && choice="${labels[i - 1]}"
+    fi
+    [[ -z $choice || $choice == "Done" ]] && break
+    for i in "${!labels[@]}"; do
+      [[ ${labels[i]} == "$choice" ]] && dock_ask "${dock_settings[i]}"
+    done
+  done
+  trap - EXIT
+  dock_peek off
+}
+
+# ---------------------------------------------------------------- window corners
+
+rounding_conf="$HOME/.config/witchers-tweaks/rounding.conf"
+
+# The saved rounding in px, else what Hyprland uses now.
+window_rounding() {
+  local px
+  px=$(sed -n 's/^[[:space:]]*rounding[[:space:]]*=[[:space:]]*\([0-9]\+\).*/\1/p' "$rounding_conf" 2>/dev/null | head -1)
+  [[ -n $px ]] || px=$(hyprctl getoption decoration:rounding -j 2>/dev/null | jq -r '.int // empty' 2>/dev/null)
+  echo "${px:-0}"
+}
+
+preview_rounding() {
+  hyprctl eval "hl.config({ decoration = { rounding = $1 } })" >/dev/null
+}
+
+save_rounding() {
+  mkdir -p "$(dirname "$rounding_conf")"
+  printf 'rounding=%s\n' "$1" >"$rounding_conf"
+}
+
+# Adding the tweak keeps the current corners until they're configured (or
+# asks right away in a terminal).
+setup_window_rounding() {
+  if [[ -n ${WINDOW_ROUNDING:-} ]]; then
+    [[ $WINDOW_ROUNDING =~ ^[0-9]+$ ]] && (( WINDOW_ROUNDING <= 24 )) || { echo "WINDOW_ROUNDING must be 0-24" >&2; return 1; }
+    save_rounding "$WINDOW_ROUNDING"
+    echo "set      window corners: ${WINDOW_ROUNDING}px"
+  elif [[ -f $rounding_conf ]]; then
+    echo "ok       window corners: $(window_rounding)px"
+  elif [[ -t 0 && -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
+    configure_window_rounding
+  else
+    save_rounding "$(window_rounding)"
+    echo "set      window corners: $(window_rounding)px (change in Configure > Corners)"
+  fi
+}
+
+remove_window_rounding() {
+  if [[ -f $rounding_conf ]]; then
+    rm -f "$rounding_conf"
+    echo "removed  ~/.config/witchers-tweaks/rounding.conf"
+  fi
+}
+
+configure_window_rounding() {
+  local px
+  if [[ -n ${WINDOW_ROUNDING:-} || ! -t 0 ]]; then
+    setup_window_rounding
+    return
+  fi
+  if [[ -z ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
+    echo "Window corners need a running Hyprland session." >&2
+    return 1
+  fi
+  px=$(term_slider "Window corner rounding" 0 24 1 "$(window_rounding)" "px" preview_rounding)
+  save_rounding "$px"
+  preview_rounding "$px"
+  echo "set      window corners: ${px}px"
+}
+
 # ---------------------------------------------------------------- monitors
 
 monitor_setup="$repo/monitors/monitor-setup"
@@ -905,6 +1296,14 @@ step() {
     apply:@overview) enable_service witcher.overview '{}' "window overview" ;;
     remove:@overview) disable_service witcher.overview "no window overview" ;;
     check:@overview) service_enabled witcher.overview ;;
+
+    apply:@window-rounding) setup_window_rounding ;;
+    remove:@window-rounding) remove_window_rounding ;;
+    check:@window-rounding) [[ -f $rounding_conf ]] ;;
+
+    apply:@dock) setup_dock ;;
+    remove:@dock) disable_service witcher.dock "no dock" ;;
+    check:@dock) service_enabled witcher.dock ;;
 
     apply:@autohide) start_autohide ;;
     remove:@autohide) stop_autohide ;;

@@ -1,0 +1,165 @@
+#!/bin/bash
+# What the dock does outside the shell.
+#
+#   dock focus <address>              go to a window (restoring it if minimized),
+#                                     then put the cursor on it
+#   dock minimize <address>...        minimize windows (to special:minimized)
+#   dock pin-custom <app-id> <pid> <name>
+#                                     write a launcher for an app that has none,
+#                                     from the command its window was started with
+#   dock unpin-custom <desktop-id>    remove such a launcher again
+#   dock autostart on|off <desktop-id>
+#                                     Open at Login, through ~/.config/autostart
+#   dock open-trash                   open the trash in the file manager
+#   dock empty-trash                  empty the trash
+#
+# Omarchy focuses whatever is under the cursor, so after going to a window the
+# cursor goes onto it; a cursor left over another window would take focus
+# straight back on the next nudge of the mouse.
+
+set -euo pipefail
+
+minimized="special:minimized"
+applications="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+autostart="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
+
+die() { echo "dock: $*" >&2; exit 1; }
+
+address() {
+  [[ ${1:-} =~ ^0x[0-9a-f]+$ ]] || die "bad address: ${1:-}"
+  echo "$1"
+}
+
+desktop_id() {
+  [[ ${1:-} =~ ^[A-Za-z0-9._-]+$ ]] || die "bad desktop id: ${1:-}"
+  echo "$1"
+}
+
+focus() {
+  local addr workspace
+  addr=$(address "${1:-}")
+  workspace=$(hyprctl clients -j | jq -r --arg a "$addr" 'first(.[] | select(.address == $a) | .workspace.name) // empty')
+  [[ -n $workspace ]] || exit 0
+  if [[ $workspace == "$minimized" ]]; then
+    # Restoring brings the window to the workspace you're on, like macOS.
+    local current
+    current=$(hyprctl activeworkspace -j | jq -r .id)
+    hyprctl dispatch "hl.dsp.window.move({ window = \"address:$addr\", workspace = \"$current\", follow = false })" >/dev/null
+  fi
+  hyprctl dispatch "hl.dsp.focus({ window = \"address:$addr\" })" >/dev/null
+
+  # The layout can move the window as it takes focus (the scrolling layout
+  # scrolls it into view), so read its place once that has settled.
+  sleep 0.1
+  local x y
+  read -r x y < <(hyprctl clients -j | jq -r --arg a "$addr" '
+    first(.[] | select(.address == $a)) | "\(.at[0] + (.size[0] / 2 | floor)) \(.at[1] + (.size[1] / 2 | floor))"')
+  [[ -n ${x:-} && -n ${y:-} ]] || exit 0
+  hyprctl dispatch "hl.dsp.cursor.move({ x = $x, y = $y })" >/dev/null
+}
+
+minimize() {
+  local addr
+  for addr in "$@"; do
+    addr=$(address "$addr")
+    hyprctl dispatch "hl.dsp.window.move({ window = \"address:$addr\", workspace = \"$minimized\", follow = false })" >/dev/null
+  done
+}
+
+# One argument quoted for a desktop file's Exec key.
+exec_quote() {
+  local s=$1
+  if [[ $s =~ ^[A-Za-z0-9._/:=@%+,-]+$ ]]; then
+    printf '%s' "$s"
+  else
+    s=${s//\\/\\\\\\\\}
+    s=${s//\"/\\\\\"}
+    s=${s//\`/\\\\\`}
+    s=${s//\$/\\\\\$}
+    printf '"%s"' "$s"
+  fi
+}
+
+custom_id() {
+  echo "witcher-dock-$(tr -c 'A-Za-z0-9._-' '-' <<<"$1" | sed 's/-*$//')"
+}
+
+pin_custom() {
+  local app_id="${1:?app id}" pid="${2:?pid}" name="${3:-$1}"
+  [[ $pid =~ ^[0-9]+$ && -r /proc/$pid/cmdline ]] || die "no such process: $pid"
+  local args=() arg exec="" id
+  mapfile -d '' -t args </proc/"$pid"/cmdline
+  (( ${#args[@]} )) || die "process $pid has no command line"
+  for arg in "${args[@]}"; do exec+="${exec:+ }$(exec_quote "$arg")"; done
+  id=$(custom_id "$app_id")
+  mkdir -p "$applications"
+  # NoDisplay keeps it out of the app launcher; the dock finds it by
+  # StartupWMClass.
+  cat >"$applications/$id.desktop.tmp" <<EOF
+[Desktop Entry]
+Type=Application
+Name=${name//$'\n'/ }
+Exec=$exec
+Icon=$app_id
+StartupWMClass=$app_id
+NoDisplay=true
+X-Witchers-Tweaks=dock
+EOF
+  mv "$applications/$id.desktop.tmp" "$applications/$id.desktop"
+  echo "$id"
+}
+
+unpin_custom() {
+  local id file
+  id=$(desktop_id "${1:-}")
+  [[ $id == witcher-dock-* ]] || exit 0
+  file="$applications/$id.desktop"
+  grep -qsx 'X-Witchers-Tweaks=dock' "$file" && rm -f "$file"
+  return 0
+}
+
+find_desktop_file() {
+  local id="$1" dir dirs
+  IFS=':' read -ra dirs <<<"${XDG_DATA_HOME:-$HOME/.local/share}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+  for dir in "${dirs[@]}"; do
+    [[ -f $dir/applications/$id.desktop ]] && { echo "$dir/applications/$id.desktop"; return 0; }
+  done
+  return 1
+}
+
+set_autostart() {
+  local mode="${1:-}" id
+  id=$(desktop_id "${2:-}")
+  case $mode in
+    on)
+      local source
+      source=$(find_desktop_file "$id") || die "no launcher for $id"
+      mkdir -p "$autostart"
+      # A copy without NoDisplay/Hidden, so the session starts it.
+      grep -v -E '^(Hidden|NoDisplay)=' "$source" >"$autostart/$id.desktop.tmp"
+      mv "$autostart/$id.desktop.tmp" "$autostart/$id.desktop"
+      ;;
+    off) rm -f "$autostart/$id.desktop" ;;
+    *) die "autostart on|off <desktop-id>" ;;
+  esac
+}
+
+# trash:/// has no handler of its own (xdg-open hands it to the browser), so
+# it goes to whatever opens folders.
+open_trash() {
+  local files
+  files=$(xdg-mime query default inode/directory 2>/dev/null || true)
+  [[ -n $files ]] || files=org.gnome.Nautilus.desktop
+  exec setsid uwsm-app -- gtk-launch "${files%.desktop}" trash:///
+}
+
+case "${1:-}" in
+  focus) shift; focus "$@" ;;
+  minimize) shift; minimize "$@" ;;
+  pin-custom) shift; pin_custom "$@" ;;
+  unpin-custom) shift; unpin_custom "$@" ;;
+  autostart) shift; set_autostart "$@" ;;
+  open-trash) open_trash ;;
+  empty-trash) gio trash --empty ;;
+  *) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+esac

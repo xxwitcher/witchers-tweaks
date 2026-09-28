@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "witcher.dock",
+  "name": "Dock",
+  "version": "1.0.0",
+  "author": "witcher",
+  "license": "MIT",
+  "description": "macOS-style dock at the bottom of the screen: pinned and running apps, autohide, right-click to keep in the dock.",
+  "kinds": [
+    "service"
+  ],
+  "entryPoints": {
+    "service": "Dock.qml"
+  }
+}

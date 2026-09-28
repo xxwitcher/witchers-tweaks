@@ -47,6 +47,31 @@ Item {
   readonly property string fontFamily: Style.font.menuFamily
   readonly property int radius: Style.cornerRadius
 
+  // The picked workspace and window wear the window border: the theme's
+  // active-border gradient (the border tweak's colors when it's on, flat
+  // accent otherwise), turning at the same speed as on the windows.
+  property real borderTurn: 0
+  readonly property var activeBorder: Border.withWidth(Border.hyprlandActiveSpec(accent, 0), Style.space(3))
+  readonly property var pickedBorder: activeBorder.gradient.enabled
+    ? {
+        color: activeBorder.color,
+        widths: activeBorder.widths,
+        gradient: {
+          colors: activeBorder.gradient.colors,
+          angle: (activeBorder.gradient.angle + borderTurn) % 360,
+          enabled: true
+        }
+      }
+    : activeBorder
+
+  NumberAnimation on borderTurn {
+    from: 0
+    to: 360
+    duration: 13330
+    loops: Animation.Infinite
+    running: root.opened && root.activeBorder.gradient.enabled
+  }
+
   readonly property int margin: Style.space(40)
   readonly property int cardGap: Style.space(22)
   readonly property int titleHeight: Style.font.caption + Style.space(10)
@@ -337,11 +362,18 @@ Item {
             }
 
             Rectangle {
+              visible: !space.selected
               anchors.fill: parent
               radius: root.radius
               color: "transparent"
-              border.width: space.selected ? Style.space(3) : 1
-              border.color: space.selected ? root.accent : root.quiet
+              border.width: 1
+              border.color: root.quiet
+            }
+
+            BorderOverlay {
+              visible: space.selected
+              radius: root.radius
+              borderSpec: root.pickedBorder
             }
           }
 
@@ -460,11 +492,18 @@ Item {
                     }
 
                     Rectangle {
+                      visible: !card.selected
                       anchors.fill: parent
                       radius: root.radius
                       color: "transparent"
-                      border.width: card.selected ? Style.space(3) : 1
-                      border.color: card.selected ? root.accent : root.quiet
+                      border.width: 1
+                      border.color: root.quiet
+                    }
+
+                    BorderOverlay {
+                      visible: card.selected
+                      radius: root.radius
+                      borderSpec: root.pickedBorder
                     }
                   }
 
