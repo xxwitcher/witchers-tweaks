@@ -50,7 +50,7 @@ lives in **Setup > Witcher's Tweaks** (right under Config): **Add**,
 SUSPEND_MINUTES=10 ./install.sh suspend            # without the question
 NOTIFY_SECONDS=8 ./install.sh --configure notifications
 DOCK_SIZE=56 DOCK_MAGNIFICATION=96 DOCK_TRANSPARENCY=20 ./install.sh --configure dock
-WINDOW_ROUNDING=10 ./install.sh rounding
+WINDOW_ROUNDING=60 ./install.sh rounding
 ```
 
 Keep the clone: installed files link back into it, and `git pull` updates
@@ -63,7 +63,7 @@ battery, the Touch Bar without tiny-dfr) aren't offered.
 |---|---|---|
 | Look | `gaps` | No gaps between windows |
 | Look | `border` | Spinning three-color gradient border on windows, bar popups, notifications and the lock screen; colors picked in Configure > Borders |
-| Look | `rounding` | Window corner rounding, 0 (sharp, Omarchy's default) to 24 px, set on a slider in Configure > Corners with a live preview |
+| Look | `rounding` | Window corner rounding, 0% (sharp, Omarchy's default) to 100% (a 32 px radius), set on a slider in Configure > Corners with a live preview. The dock's corner rounding uses the same scale, so the same % matches |
 | Look | `wsfade` | Workspaces slide in with a fade instead of switching instantly |
 | Look | `columns` | Scrolling layout: one column per screen instead of two |
 | Input | `swapkeys` | Swap left Ctrl and left Super (right-hand keys stay) |

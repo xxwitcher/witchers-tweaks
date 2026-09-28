@@ -51,7 +51,7 @@ tweaks=(
   "border|Look|Spinning gradient border on windows, popups and notifications, in colors you pick|$plugins/witcher.border-colors/Picker.qml $plugins/witcher.border-colors/manifest.json $plugins/witcher.border-colors/bin/border-colors hypr:gradient-border @border-shell @border-picker @border-spin"
   "wsfade|Look|Workspaces slide in with a fade instead of switching instantly|hypr:workspace-fade"
   "columns|Look|Scrolling layout: one column per screen instead of two|hypr:wide-columns"
-  "rounding|Look|Window corner rounding you choose on a slider, sharp to round|hypr:window-rounding @window-rounding"
+  "rounding|Look|Window corner rounding on a % slider (the same scale as the dock's)|hypr:window-rounding @window-rounding"
   "swapkeys|Input|Swap left Ctrl and left Super (the right-hand keys stay)|hypr:swap-ctrl-super"
   "swipe|Input|macOS-like 3-finger swipe between workspaces|hypr:workspace-swipe"
   "bindbrowser|Keybindings|SUPER+B opens the browser (instead of SUPER+SHIFT+B)|hypr:bind-browser"
@@ -693,7 +693,7 @@ dock_settings=(
   "click|DOCK_CLICK|Clicking the app you're in|choice|cycle|Goes to its next window;focus|Stays on its last used window"
   "transparency|DOCK_TRANSPARENCY|Dock transparency|slider|0:90:5"
   "appsTransparency|DOCK_APPS_TRANSPARENCY|App drawer transparency|slider|0:90:5"
-  "roundness|DOCK_ROUNDNESS|Corner rounding (dock and app drawer)|slider|0:100:5:60"
+  "roundness|DOCK_ROUNDNESS|Corner rounding (dock and app drawer; same scale as windows)|slider|0:100:5:60"
   "border|DOCK_BORDER|Dock border|border|windows|Same gradient as the windows;custom|Custom gradient colors;solid|One solid color (no gradient);none|No border"
 )
 
@@ -1004,37 +1004,47 @@ configure_dock() {
 
 rounding_conf="$HOME/.config/witchers-tweaks/rounding.conf"
 
-# The saved rounding in px, else what Hyprland uses now.
+# Window corners go from 0 (sharp) to 100 %, a 32 px radius: the same scale as
+# the dock's corner rounding, so equal percentages match.
+rounding_px() { echo $(( ($1 * 32 + 50) / 100 )); }
+
+# The saved percentage, else the nearest to what Hyprland uses now.
 window_rounding() {
-  local px
-  px=$(sed -n 's/^[[:space:]]*rounding[[:space:]]*=[[:space:]]*\([0-9]\+\).*/\1/p' "$rounding_conf" 2>/dev/null | head -1)
-  [[ -n $px ]] || px=$(hyprctl getoption decoration:rounding -j 2>/dev/null | jq -r '.int // empty' 2>/dev/null)
-  echo "${px:-0}"
+  local percent px
+  percent=$(sed -n 's/^[[:space:]]*roundness[[:space:]]*=[[:space:]]*\([0-9]\+\).*/\1/p' "$rounding_conf" 2>/dev/null | head -1)
+  if [[ -z $percent ]]; then
+    # rounding=<px> is what the first version of the tweak saved.
+    px=$(sed -n 's/^[[:space:]]*rounding[[:space:]]*=[[:space:]]*\([0-9]\+\).*/\1/p' "$rounding_conf" 2>/dev/null | head -1)
+    [[ -n $px ]] || px=$(hyprctl getoption decoration:rounding -j 2>/dev/null | jq -r '.int // empty' 2>/dev/null)
+    percent=$(( (${px:-0} * 100 + 16) / 32 ))
+    (( percent > 100 )) && percent=100
+  fi
+  echo "$percent"
 }
 
 preview_rounding() {
-  hyprctl eval "hl.config({ decoration = { rounding = $1 } })" >/dev/null
+  hyprctl eval "hl.config({ decoration = { rounding = $(rounding_px "$1") } })" >/dev/null
 }
 
 save_rounding() {
   mkdir -p "$(dirname "$rounding_conf")"
-  printf 'rounding=%s\n' "$1" >"$rounding_conf"
+  printf 'roundness=%s\n' "$1" >"$rounding_conf"
 }
 
 # Adding the tweak keeps the current corners until they're configured (or
 # asks right away in a terminal).
 setup_window_rounding() {
   if [[ -n ${WINDOW_ROUNDING:-} ]]; then
-    [[ $WINDOW_ROUNDING =~ ^[0-9]+$ ]] && (( WINDOW_ROUNDING <= 24 )) || { echo "WINDOW_ROUNDING must be 0-24" >&2; return 1; }
+    [[ $WINDOW_ROUNDING =~ ^[0-9]+$ ]] && (( WINDOW_ROUNDING <= 100 )) || { echo "WINDOW_ROUNDING must be 0-100 (%)" >&2; return 1; }
     save_rounding "$WINDOW_ROUNDING"
-    echo "set      window corners: ${WINDOW_ROUNDING}px"
-  elif [[ -f $rounding_conf ]]; then
-    echo "ok       window corners: $(window_rounding)px"
+    echo "set      window corners: $WINDOW_ROUNDING%"
+  elif grep -qs '^[[:space:]]*roundness' "$rounding_conf"; then
+    echo "ok       window corners: $(window_rounding)%"
   elif [[ -t 0 && -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]]; then
     configure_window_rounding
   else
     save_rounding "$(window_rounding)"
-    echo "set      window corners: $(window_rounding)px (change in Configure > Corners)"
+    echo "set      window corners: $(window_rounding)% (change in Configure > Corners)"
   fi
 }
 
@@ -1046,7 +1056,7 @@ remove_window_rounding() {
 }
 
 configure_window_rounding() {
-  local px
+  local percent
   if [[ -n ${WINDOW_ROUNDING:-} || ! -t 0 ]]; then
     setup_window_rounding
     return
@@ -1055,10 +1065,10 @@ configure_window_rounding() {
     echo "Window corners need a running Hyprland session." >&2
     return 1
   fi
-  px=$(term_slider "Window corner rounding" 0 24 1 "$(window_rounding)" "px" preview_rounding)
-  save_rounding "$px"
-  preview_rounding "$px"
-  echo "set      window corners: ${px}px"
+  percent=$(term_slider "Window corner rounding (same scale as the dock's)" 0 100 5 "$(window_rounding)" "%" preview_rounding)
+  save_rounding "$percent"
+  preview_rounding "$percent"
+  echo "set      window corners: $percent%"
 }
 
 # ---------------------------------------------------------------- monitors

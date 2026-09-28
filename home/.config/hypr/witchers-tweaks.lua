@@ -38,12 +38,15 @@ if on("wide-columns") then
 end
 
 -- Workspaces slide in with a fade instead of switching instantly.
--- Window corners rounded by the px in rounding.conf (Setup > Witcher's
--- Tweaks > Configure > Corners).
+-- Window corners rounded by the percentage in rounding.conf (Setup >
+-- Witcher's Tweaks > Configure > Corners): 0 is sharp, 100 % a 32 px radius,
+-- the same scale as the dock's corner rounding.
 if on("window-rounding") then
   for _, line in ipairs(read_lines(state .. "/rounding.conf")) do
-    local px = tonumber(line:match("^%s*rounding%s*=%s*(%d+)%s*$"))
-    if px then hl.config({ decoration = { rounding = px } }) end
+    local percent = tonumber(line:match("^%s*roundness%s*=%s*(%d+)%s*$"))
+    if percent then
+      hl.config({ decoration = { rounding = math.floor(math.min(100, percent) * 32 / 100 + 0.5) } })
+    end
   end
 end
 

@@ -43,7 +43,7 @@ import qs.Ui
 //                             next window, focus stays on the last used one
 //     "transparency": 0,      dock background transparency, 0-90 %
 //     "appsTransparency": 0,  Apps panel background transparency, 0-90 %
-//     "roundness": 60,        corner rounding, 0 (sharp) to 100 % (round ends)
+//     "roundness": 60,        corner rounding, 0 (sharp) to 100 % (32 px, like windows)
 //     "border": "windows",    windows (their gradient), custom, solid or none
 //     "borderColors": ["#c4b5fd", "#a855f7", "#da70d6"],   for custom (3) and solid (1)
 //     "pinned": ["chromium", "org.gnome.Nautilus"] }   desktop entry ids
@@ -149,10 +149,13 @@ Item {
   readonly property int thickness: iconSize + padding * 2 + dotRoom
   readonly property int dividerExtent: Style.space(1) + iconGap
   // Rounded whatever the theme's corner radius, like the macOS dock.
-  // "roundness": 0 (sharp corners) to 100 % (fully round ends); 60 by
-  // default. Everything the dock draws rounds by the same share.
+  // "roundness": 0 (sharp) to 100 %, where 100 % is a 32 px corner radius:
+  // the same scale as the window-rounding tweak, so equal percentages give
+  // the dock and the windows the same corners. 60 by default. The dock caps
+  // it at half its thickness (fully round ends); the rest of what it draws
+  // rounds by the same share.
   readonly property real roundness: number("roundness", 60, 0, 100) / 100
-  readonly property int radius: Math.round(thickness / 2 * roundness)
+  readonly property int radius: Math.min(Math.round(thickness / 2), Math.round(32 * roundness))
   readonly property int smallRadius: Math.round(Style.space(16) * roundness)
   readonly property int popupWidth: Style.space(280)
 
