@@ -61,6 +61,7 @@ In a desktop session `./install.sh` opens a setup window: pick tweaks, set up th
 | `settings` | Settings app, like macOS's System Settings (see below) |
 | `dock` | macOS-style dock with an app drawer (see below) |
 | `titlebars` | macOS-style title bars on floating windows: close, minimize, maximize, drag to move. Builds the [hyprbars](https://github.com/hyprwm/hyprland-plugins) plugin for your Hyprland and rebuilds it after updates |
+| `borderresize` | Resize floating windows by dragging their border; tiled windows are left alone |
 | `overview` | Mission Control-style window overview; 3-finger swipe up |
 | `border` | Animated three-color gradient border on windows, popups, notifications and the lock screen |
 | `rounding` | Window corner rounding, 0–100% (same scale as the dock) |
@@ -91,6 +92,12 @@ Input settings and custom shortcuts go in `~/.config/witchers-tweaks/settings.js
 ### Dock
 
 Pinned, running and recent apps, minimized windows, Downloads and Trash. The Apps icon opens a searchable app drawer. Drag icons to rearrange, keep or remove them; drop an app on the Trash to uninstall it. SUPER+M minimizes into the dock with a genie, scale, fade or slide effect. Has macOS's Desktop & Dock options plus transparency, corner rounding and border colors.
+
+### Window controls
+
+<a href="docs/screenshots/xminmax.png"><img src="docs/screenshots/xminmax.png" width="820" alt="Window controls on a floating window"></a>
+
+Hover the top-left corner of a floating window and a tab grows out of it with close, minimize and maximize. It follows your border gradient, corner rounding and the app's own color. Drag a floating window by its top edge. While a window is maximized, the three buttons sit in the top bar, between the Omarchy menu and the workspaces; + restores it. Minimize and restore play the dock's effect, and a restored window comes back on top.
 
 ## How it works
 
