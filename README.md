@@ -81,6 +81,7 @@ In a desktop session `./install.sh` opens a setup window: pick tweaks, set up th
 | `notifytimeout` | Notifications leave after a few seconds, critical ones too |
 | `suspend` | Suspend after 1–60 idle minutes instead of the screensaver |
 | `smidriver` | Silicon Motion SM77x USB display adapter driver, with a crash fix |
+| `fans` | Fan speed control in the top bar (Apple Silicon Macs, see below) |
 | `touchbar` | Touch Bar layout (MacBooks with tiny-dfr) |
 
 ### Settings app
@@ -98,6 +99,14 @@ Pinned, running and recent apps, minimized windows, Downloads and Trash. The App
 <a href="docs/screenshots/xminmax.png"><img src="docs/screenshots/xminmax.png" width="820" alt="Window controls on a floating window"></a>
 
 Hover the top-left corner of a floating window and a tab grows out of it with close, minimize and maximize. It follows your border gradient, corner rounding and the app's own color. Drag a floating window by its top edge. While a window is maximized, the three buttons sit in the top bar, between the Omarchy menu and the workspaces; + restores it. Minimize and restore play the dock's effect, and a restored window comes back on top.
+
+### Fan control
+
+<a href="docs/screenshots/fancontrol.png"><img src="docs/screenshots/fancontrol.png" width="400" alt="Fan control panel"></a>
+
+A fan icon in the top bar opens the fan's speed, its range and the temperature sensors. Each fan runs on Auto (the Mac decides), Full Blast, Constant (a speed you set), or Range: quiet at one temperature, full blast at another, in a straight line between, following the sensor you pick. Right-click the icon to show the speed in the bar.
+
+Installing it adds `macsmc_hwmon.fan_control=1` to the kernel options in GRUB and lets the `wheel` group set fan speeds; reboot afterwards. Removing it puts the fans back on Auto.
 
 ## How it works
 

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "witcher.fans",
+  "name": "Fans",
+  "version": "1.0.0",
+  "author": "witcher",
+  "license": "MIT",
+  "description": "Fan speed control for Apple Silicon Macs: auto, full blast, a fixed speed, or a speed that follows a temperature sensor.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Fans",
+    "description": "Fan speeds and temperatures; set each fan to automatic, a fixed speed or sensor-based.",
+    "category": "System",
+    "allowMultiple": false
+  }
+}

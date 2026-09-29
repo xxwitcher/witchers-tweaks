@@ -138,6 +138,9 @@ Singleton {
       delete tweakBusy[name]
       busyStamp++
       if (code !== 0) toast("Couldn't " + (on ? "add " : "remove ") + name)
+      var reboot = String(out || "").match(/^reboot +needed to finish: (.*)$/m)
+      if (reboot) root.confirm({ title: "Reboot now?", text: "A reboot is needed for some changes to apply (" + reboot[1] + ").",
+        action: "Reboot", onAccept: function() { root.detached(["omarchy", "system", "reboot"]) } })
       refreshTweaks()
       refresh()
       if (done) done(code === 0)

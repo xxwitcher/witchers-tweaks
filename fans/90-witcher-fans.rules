@@ -1,0 +1,4 @@
+# Witcher's Tweaks (fans): lets the wheel group set Apple Silicon fan speeds.
+# fanN_target only takes writes when macsmc_hwmon.fan_control=1 is on the
+# kernel command line.
+ACTION=="add|change", SUBSYSTEM=="hwmon", ATTR{name}=="macsmc_hwmon", RUN+="/usr/bin/sh -c 'for f in /sys%p/fan*_target; do chgrp wheel $f && chmod g+w $f; done'"

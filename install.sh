@@ -72,6 +72,7 @@ tweaks=(
   "dock|Windows|macOS-style dock: Apps view, kept, running and recent apps, drag to arrange, Downloads, Trash, SUPER+M minimizes|$plugins/witcher.dock/Dock.qml $plugins/witcher.dock/MinimizeEffect.qml $plugins/witcher.dock/shaders/genie.vert $plugins/witcher.dock/shaders/genie.frag $plugins/witcher.dock/shaders/genie.vert.qsb $plugins/witcher.dock/shaders/genie.frag.qsb $plugins/witcher.dock/manifest.json $plugins/witcher.dock/bin/dock $plugins/witcher.dock/AppsPanel.qml @dock hypr:dock-minimize"
   "suspend|Power|No screensaver; suspend after a chosen idle time (1-60 min)|$plugins/witcher.idle-suspend/Service.qml $plugins/witcher.idle-suspend/manifest.json @idle-suspend"
   "smidriver|Hardware|Silicon Motion SM77x USB display adapter driver (evdi-dkms based, with a crash fix)|@smi-driver"
+  "fans|Hardware|Fan speed control in the top bar: auto, full blast, fixed or following a temperature (Apple Silicon Macs; adds a kernel option, needs a reboot)|$plugins/witcher.fans/Panel.qml $plugins/witcher.fans/manifest.json $plugins/witcher.fans/bin/fans @fan-control @fans-bar"
   "touchbar|Hardware|Touch Bar layout and screenshot key (MacBooks with tiny-dfr)|system/etc/tiny-dfr"
 )
 
@@ -120,6 +121,7 @@ available() {
       hypr:*) [[ -f $hyprland_config ]] || return 1 ;;
       @battery-percent) has_battery || return 1 ;;
       @smi-driver) command -v pacman >/dev/null || return 1 ;;
+      @fan-control) has_smc_fan || return 1 ;;
     esac
   done
 }
@@ -1290,6 +1292,118 @@ remove_smi_driver() {
   ' _ "$smi_nullfix_lib" "$smi_nullfix_dropin"
   echo "removed  evdi null fix"
   echo "note     dkms, evdi-dkms and the kernel headers stay installed (omarchy pkg remove evdi-dkms to drop it); reboot to finish"
+  need_reboot "removing the SiliconMotion driver"
+}
+
+# ---------------------------------------------------------------- fans
+
+# Apple Silicon fan control through the kernel's macsmc_hwmon driver. Its
+# fanN_target files only take writes when the driver's fan_control option is
+# set at boot (it's built in, so that's a kernel option, added to GRUB here;
+# the kernel marks itself tainted while it's on). The udev rule lets the wheel
+# group write them, so the bar widget can set speeds without a password.
+fans_param="macsmc_hwmon.fan_control=1"
+fans_rule=/etc/udev/rules.d/90-witcher-fans.rules
+grub_defaults=/etc/default/grub
+
+has_smc_fan() {
+  local h
+  for h in /sys/class/hwmon/hwmon*; do
+    [[ $(cat "$h/name" 2>/dev/null) == macsmc_hwmon ]] && compgen -G "$h/fan*_target" >/dev/null && return 0
+  done
+  return 1
+}
+
+grub_has_fans_param() {
+  grep -qs "^GRUB_CMDLINE_LINUX_DEFAULT=.*$fans_param" "$grub_defaults"
+}
+
+fan_control_installed() {
+  [[ -f $fans_rule ]] && grub_has_fans_param
+}
+
+# Rewrites GRUB_CMDLINE_LINUX_DEFAULT with the option added (add) or taken
+# out (remove), keeping a backup, then regenerates grub.cfg.
+edit_grub_fans_param() {
+  $SUDO bash -c '
+    set -e
+    file="$1" param="$2" action="$3"
+    current=$(sed -n "s/^GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)\"$/\1/p" "$file")
+    next=$(tr " " "\n" <<<"$current" | grep -vxF "$param" | tr "\n" " " || true)
+    [[ $action == add ]] && next="$next $param"
+    next=$(xargs <<<"$next")
+    cp "$file" "$file.bak.$4"
+    sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=\".*\"$|GRUB_CMDLINE_LINUX_DEFAULT=\"$next\"|" "$file"
+    grub-mkconfig -o /boot/grub/grub.cfg
+  ' _ "$grub_defaults" "$fans_param" "$1" "$stamp"
+}
+
+install_fan_control() {
+  if [[ ! -f $grub_defaults ]]; then
+    echo "skip     fan control: no $grub_defaults; add $fans_param to your kernel options by hand" >&2
+  elif grub_has_fans_param; then
+    echo "ok       kernel option $fans_param"
+  else
+    edit_grub_fans_param add
+    echo "set      kernel option $fans_param (backup $grub_defaults.bak.$stamp)"
+  fi
+
+  if cmp -s "$repo/fans/90-witcher-fans.rules" "$fans_rule"; then
+    echo "ok       $fans_rule"
+  else
+    $SUDO bash -c '
+      install -D -m 644 "$1" "$2"
+      udevadm control --reload
+      udevadm trigger --action=change --subsystem-match=hwmon
+    ' _ "$repo/fans/90-witcher-fans.rules" "$fans_rule"
+    echo "installed $fans_rule"
+  fi
+
+  if grub_has_fans_param && ! grep -qw "$fans_param" /proc/cmdline; then
+    echo "note     reboot to turn fan control on (until then the widget only shows speeds)"
+    need_reboot "fan control"
+  fi
+  return 0
+}
+
+# Hands every fan back to the SMC first, so none stays at a fixed speed.
+remove_fan_control() {
+  local target
+  for target in /sys/class/hwmon/hwmon*/fan*_target; do
+    if [[ -w $target && $(cat "${target%/*}/name" 2>/dev/null) == macsmc_hwmon ]]; then
+      echo 0 >"$target" 2>/dev/null || true
+    fi
+  done
+
+  if grub_has_fans_param; then
+    edit_grub_fans_param remove
+    echo "removed  kernel option $fans_param (backup $grub_defaults.bak.$stamp)"
+  else
+    echo "ok       kernel option $fans_param (not set)"
+  fi
+
+  if [[ -f $fans_rule ]]; then
+    $SUDO bash -c 'rm -f "$1"; udevadm control --reload' _ "$fans_rule"
+    echo "removed  $fans_rule"
+  fi
+  if grep -qw "$fans_param" /proc/cmdline; then
+    echo "note     reboot to finish (fans are back on automatic already)"
+    need_reboot "removing fan control"
+  fi
+  return 0
+}
+
+# Right side of the bar, just left of the agent widget (or the battery, or at
+# the end without either).
+place_fans_widget() {
+  edit_shell_config "fans on the bar" '
+    if any(.bar.layout[]?[]?; .id == "witcher.fans") then . else
+      (.bar.layout.right // []) as $right
+      | ([$right | to_entries[] | select(.value.id == "witcher.agents" or .value.id == "omarchy.agents") | .key] | first
+        // ([$right | to_entries[] | select(.value.id == "omarchy.power") | .key] | first)
+        // ($right | length)) as $at
+      | .bar.layout.right = $right[:$at] + [{id: "witcher.fans"}] + $right[$at:]
+    end'
 }
 
 # ---------------------------------------------------------------- steps
@@ -1335,6 +1449,14 @@ step() {
     apply:@smi-driver) install_smi_driver ;;
     remove:@smi-driver) remove_smi_driver ;;
     check:@smi-driver) smi_installed ;;
+
+    apply:@fan-control) install_fan_control ;;
+    remove:@fan-control) remove_fan_control ;;
+    check:@fan-control) fan_control_installed ;;
+
+    apply:@fans-bar) place_fans_widget ;;
+    remove:@fans-bar) edit_shell_config "no fans on the bar" '.bar.layout |= with_entries(.value |= map(select(.id != "witcher.fans")))' ;;
+    check:@fans-bar) shell_config_has 'any(.bar.layout[]?[]?; .id == "witcher.fans")' ;;
 
     apply:@clock-center) center_clock ;;
     remove:@clock-center) uncenter_clock ;;
@@ -1609,6 +1731,11 @@ check_names() {
   done
 }
 
+# Notes that a step only takes effect after a reboot; asked about at the end.
+need_reboot() {
+  [[ " ${reboot_reasons[*]} " == *" $1 "* ]] || reboot_reasons+=("$1")
+}
+
 need_terminal() {
   if [[ ! -t 0 ]]; then
     echo "No terminal to ask in; pass tweak names (see --list)." >&2
@@ -1628,6 +1755,8 @@ selected=()
 reload_hypr=false
 # Set by the steps when a shell plugin comes or goes.
 restart_shell=false
+# What needs a reboot to take effect (kernel options, drivers), from need_reboot.
+reboot_reasons=()
 
 case "${1:-}" in
   --monitors)
@@ -1809,3 +1938,20 @@ if $restart_shell && shell_running; then
   omarchy restart shell >/dev/null
   echo "restarted Omarchy shell"
 fi
+
+# Only when a step needs it. The "reboot" line is what the setup window and
+# the Settings app look for to offer a reboot of their own; in a terminal,
+# ask here.
+if (( ${#reboot_reasons[@]} )); then
+  reasons=$(IFS=,; echo "${reboot_reasons[*]}" | sed 's/,/, /g')
+  echo "reboot   needed to finish: $reasons"
+  if [[ -t 0 ]]; then
+    if command -v gum >/dev/null; then
+      gum confirm "A reboot is needed for some changes to apply ($reasons). Reboot now?" && omarchy system reboot
+    else
+      read -rp "A reboot is needed for some changes to apply ($reasons). Reboot now? [y/N] " answer </dev/tty
+      [[ $answer == [yY]* ]] && omarchy system reboot
+    fi
+  fi
+fi
+exit 0

@@ -173,11 +173,11 @@ end
 local function titlebars()
   local so = home .. "/.local/share/witchers-tweaks/hyprbars/hyprbars.so"
   local built_for = read_lines(home .. "/.local/share/witchers-tweaks/hyprbars/built-for")[1]
-  local loaded = false
-  for _, plugin in ipairs(hl.get_loaded_plugins and hl.get_loaded_plugins() or {}) do
-    if plugin.name == "hyprbars" then loaded = true end
-  end
-  if not loaded and built_for then pcall(hl.plugin.load, so) end
+  -- hl.plugin.load only lists the plugin; Hyprland loads it after the parse.
+  -- It has to be listed on every parse, loaded or not: one that goes unlisted
+  -- is unloaded and the config reloaded, which would list it again, and
+  -- Hyprland would loop there forever (it hung at login that way).
+  if built_for then pcall(hl.plugin.load, so) end
 
   if hl.plugin.hyprbars then
     hl.config({ plugin = { hyprbars = {

@@ -76,6 +76,8 @@ ShellRoot {
   property bool finished: false
   property int exitCode: 0
   property string log: ""
+  // Set when install.sh says a change needs a reboot ("reboot   needed to finish: ...").
+  property string rebootReason: ""
 
   function q(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'" }
 
@@ -108,6 +110,7 @@ ShellRoot {
     running = true
     finished = false
     log = ""
+    rebootReason = ""
     installer.command = ["bash", "-c", script()]
     installer.running = true
   }
@@ -116,7 +119,10 @@ ShellRoot {
     id: installer
     stdout: SplitParser {
       onRead: function(line) {
-        wizard.log += line.replace(/\x1b\[[0-9;]*m/g, "") + "\n"
+        var clean = line.replace(/\x1b\[[0-9;]*m/g, "")
+        var reboot = clean.match(/^reboot +needed to finish: (.*)$/)
+        if (reboot) wizard.rebootReason = reboot[1]
+        wizard.log += clean + "\n"
         Qt.callLater(function() { logView.contentY = Math.max(0, logView.contentHeight - logView.height) })
       }
     }
@@ -514,6 +520,15 @@ ShellRoot {
           font.family: App.font
           font.pixelSize: App.body
         }
+        Text {
+          visible: wizard.rebootReason !== ""
+          width: parent.width
+          wrapMode: Text.Wrap
+          text: "A reboot is needed for some changes to apply (" + wizard.rebootReason + ")."
+          color: App.fg
+          font.family: App.font
+          font.pixelSize: App.body
+        }
       }
     }
 
@@ -535,6 +550,11 @@ ShellRoot {
           enabled2: !wizard.running
           text: "Go Back"
           onClicked: wizard.back()
+        }
+        PillButton {
+          visible: wizard.step === 4 && wizard.rebootReason !== ""
+          text: "Reboot Now"
+          onClicked: App.detached(["omarchy", "system", "reboot"])
         }
         PillButton {
           visible: wizard.step === 4 && App.tweakOn("settings")
