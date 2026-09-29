@@ -266,6 +266,8 @@ Column {
       current: App.status.windowMode || "tiled"
       onChosen: function(v) { App.apply([App.helperPath, "window-mode", v]) }
     }
+    TweakRow { tweak: "titlebars"; label: "Window buttons and drag strip on floating windows" }
+    TweakRow { tweak: "borderresize"; label: "Resize floating windows by their border" }
     TweakRow { tweak: "overview"; label: "Window overview" }
     TweakRow { tweak: "wsfade"; label: "Slide workspaces in with a fade" }
     TweakRow { tweak: "swipe"; label: "Swipe between workspaces with three fingers" }

@@ -1,0 +1,3 @@
+#!/bin/bash
+# Witcher's Tweaks title bars: see titlebars/titlebars-hook.
+exec "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../../../../titlebars/titlebars-hook" reload

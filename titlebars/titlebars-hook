@@ -1,0 +1,21 @@
+#!/bin/bash
+# Omarchy hooks for the titlebars tweak (linked into ~/.config/omarchy/hooks).
+#
+#   titlebars-hook rebuild   after an update or at login: rebuild hyprbars when
+#                            Hyprland changed, then reload so it loads
+#   titlebars-hook reload    after a theme or font change: reload so the bars
+#                            pick up the new colors and font
+
+set -euo pipefail
+
+here=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
+grep -qsx titlebars "$HOME/.config/witchers-tweaks/tweaks.conf" || exit 0
+
+case "${1:-}" in
+  rebuild)
+    "$here/build-hyprbars" --check && exit 0
+    "$here/build-hyprbars" && hyprctl reload >/dev/null
+    ;;
+  reload) hyprctl reload >/dev/null ;;
+  *) echo "titlebars-hook rebuild|reload" >&2; exit 2 ;;
+esac

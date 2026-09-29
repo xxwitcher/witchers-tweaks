@@ -1,0 +1,61 @@
+#!/bin/bash
+# Builds the hyprbars plugin (hyprwm/hyprland-plugins) for the running
+# Hyprland, from the plugins commit hyprpm.toml pins for it, into
+# ~/.local/share/witchers-tweaks/hyprbars/hyprbars.so. Hyprland only loads a
+# plugin built from its own headers, so the result is checked against the
+# running version before it's put in place.
+#
+#   build-hyprbars           build unless the current build matches Hyprland
+#   build-hyprbars --force   build anyway
+#   build-hyprbars --check   exit 0 when the current build matches Hyprland
+
+set -euo pipefail
+
+dest="$HOME/.local/share/witchers-tweaks/hyprbars"
+stamp="$dest/built-for"
+plugins_repo="https://raw.githubusercontent.com/hyprwm/hyprland-plugins"
+
+die() { echo "build-hyprbars: $*" >&2; exit 1; }
+
+commit=$(hyprctl version -j 2>/dev/null | jq -r '.commit // empty')
+[[ -n $commit ]] || die "no running Hyprland to build for"
+
+if [[ ${1:-} == --check ]]; then
+  [[ -f $dest/hyprbars.so && $(cat "$stamp" 2>/dev/null) == "$commit" ]]
+  exit
+fi
+
+if [[ ${1:-} != --force && -f $dest/hyprbars.so && $(cat "$stamp" 2>/dev/null) == "$commit" ]]; then
+  echo "ok       hyprbars (built for this Hyprland)"
+  exit 0
+fi
+
+for tool in curl make g++ pkg-config; do
+  command -v "$tool" >/dev/null || die "$tool is missing (install base-devel)"
+done
+pkg-config --exists hyprland || die "Hyprland's headers are missing"
+[[ $(pkg-config --modversion hyprland) == "$(hyprctl version -j | jq -r '.tag' | sed 's/^v//')" ]] ||
+  die "Hyprland's headers ($(pkg-config --modversion hyprland)) don't match the running Hyprland; update and log in again first"
+
+# The plugins commit made for this Hyprland commit.
+pin=$(curl -fsSL "$plugins_repo/main/hyprpm.toml" | grep -F "\"$commit\"" | sed -E 's/.*"[0-9a-f]{40}", *"([0-9a-f]{40})".*/\1/' | head -1)
+[[ $pin =~ ^[0-9a-f]{40}$ ]] || die "hyprland-plugins has no build for Hyprland $commit yet"
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+files=$(curl -fsSL "https://api.github.com/repos/hyprwm/hyprland-plugins/contents/hyprbars?ref=$pin" |
+  jq -r '.[] | select(.type == "file") | .name | select(test("\\.(cpp|hpp)$|^Makefile$"))')
+[[ -n $files ]] || die "couldn't list the hyprbars sources"
+for file in $files; do
+  curl -fsSL "$plugins_repo/$pin/hyprbars/$file" -o "$work/$file"
+done
+
+echo "building hyprbars for Hyprland ${commit:0:8}…"
+make -C "$work" >"$work/build.log" 2>&1 || { tail -20 "$work/build.log" >&2; die "the build failed"; }
+strings "$work/hyprbars.so" | grep -x "$commit" >/dev/null || die "the build doesn't match the running Hyprland"
+
+mkdir -p "$dest"
+install -m 755 "$work/hyprbars.so" "$dest/hyprbars.so.new"
+mv "$dest/hyprbars.so.new" "$dest/hyprbars.so"
+printf '%s\n' "$commit" >"$stamp"
+echo "built    hyprbars for Hyprland ${commit:0:8}"

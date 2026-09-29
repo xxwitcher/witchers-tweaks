@@ -41,12 +41,20 @@ focus() {
   workspace=$(hyprctl clients -j | jq -r --arg a "$addr" 'first(.[] | select(.address == $a) | .workspace.name) // empty')
   [[ -n $workspace ]] || exit 0
   if [[ $workspace == "$minimized" ]]; then
-    # Restoring brings the window to the workspace you're on, like macOS.
-    local current
+    # Restoring brings the window to the workspace you're on, like macOS,
+    # focused and above everything else there, in one go and without
+    # Hyprland's own fade and pop-in (the dock's animation has just played
+    # and its picture sits where the window appears, so it mustn't blink).
+    local current w="address:$addr"
     current=$(hyprctl activeworkspace -j | jq -r .id)
-    hyprctl dispatch "hl.dsp.window.move({ window = \"address:$addr\", workspace = \"$current\", follow = false })" >/dev/null
+    hyprctl eval "hl.dispatch(hl.dsp.window.set_prop({ window = \"$w\", prop = \"no_anim\", value = \"1\" }))
+      hl.dispatch(hl.dsp.window.move({ window = \"$w\", workspace = \"$current\", follow = false }))
+      hl.dispatch(hl.dsp.focus({ window = \"$w\" }))
+      hl.dispatch(hl.dsp.window.alter_zorder({ window = \"$w\", mode = \"top\" }))" >/dev/null
+    (sleep 1; hyprctl dispatch "hl.dsp.window.set_prop({ window = \"$w\", prop = \"no_anim\", value = \"unset\" })" >/dev/null 2>&1) &
+  else
+    hyprctl dispatch "hl.dsp.focus({ window = \"address:$addr\" })" >/dev/null
   fi
-  hyprctl dispatch "hl.dsp.focus({ window = \"address:$addr\" })" >/dev/null
 
   # The layout can move the window as it takes focus (the scrolling layout
   # scrolls it into view), so read its place once that has settled.

@@ -60,6 +60,7 @@ In a desktop session `./install.sh` opens a setup window: pick tweaks, set up th
 |---|---|
 | `settings` | Settings app, like macOS's System Settings (see below) |
 | `dock` | macOS-style dock with an app drawer (see below) |
+| `titlebars` | macOS-style title bars on floating windows: close, minimize, maximize, drag to move. Builds the [hyprbars](https://github.com/hyprwm/hyprland-plugins) plugin for your Hyprland and rebuilds it after updates |
 | `overview` | Mission Control-style window overview; 3-finger swipe up |
 | `border` | Animated three-color gradient border on windows, popups, notifications and the lock screen |
 | `rounding` | Window corner rounding, 0–100% (same scale as the dock) |

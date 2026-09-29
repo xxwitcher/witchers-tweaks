@@ -357,9 +357,10 @@ Item {
 
   Component.onCompleted: {
     Quickshell.execDetached(["mkdir", "-p", root.stateDir])
-    // Window places for the minimize effect.
+    // Window details (class, pid, focus order) for the fallbacks, and window
+    // places for the minimize effect.
     Hyprland.refreshToplevels()
-    rememberTimer.restart()
+    root.pollClients()
   }
 
   function noteRecent(ids) {
@@ -450,9 +451,36 @@ Item {
   function focusWindow(top) {
     if (!top) return
     var go = function() { Quickshell.execDetached([root.tool, "focus", root.hexAddress(top.address)]) }
-    // Coming back from the dock plays the minimize effect backwards first.
-    if (isMinimized(top) && playEffect(top, true, go)) return
+    // Coming back from the dock plays the minimize effect backwards first,
+    // and its picture stays until the window is back.
+    if (isMinimized(top) && playEffect(top, true, go, null, function() { return root.isMinimized(top) })) return
     go()
+  }
+
+  // Minimizes a window with the effect: its picture covers it first, then
+  // the window goes, so it never blinks. SUPER+M and the window buttons come
+  // here too (IPC: omarchy-shell witcher.dock minimize <address|active>).
+  property var minimizing: ({})
+  function minimizeWindow(top) {
+    if (!top || isMinimized(top)) return
+    var move = function() {
+      Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.window.move({ window = \"address:"
+        + root.hexAddress(top.address) + "\", workspace = \"" + root.minimizedName + "\", follow = false })"])
+    }
+    minimizing[addressKey(top.address)] = true
+    if (!playEffect(top, false, null, move)) {
+      delete minimizing[addressKey(top.address)]
+      move()
+    }
+  }
+
+  IpcHandler {
+    target: "witcher.dock"
+    function minimize(address: string): void {
+      var key = root.addressKey(address)
+      var top = key === "" || key === "active" ? Hyprland.activeToplevel : root.toplevelFor(key)
+      root.minimizeWindow(top)
+    }
   }
 
   // --------------------------------------------------------------- minimize effect
@@ -470,19 +498,77 @@ Item {
 
   function addressKey(value) { return String(value || "").replace(/^0x/, "").toLowerCase() }
 
-  function rememberWindows() {
-    var tops = Hyprland.toplevels ? Hyprland.toplevels.values : []
-    var next = ({})
-    for (var i = 0; i < tops.length; i++) {
-      var t = tops[i]
-      if (!t || !t.workspace || t.workspace.id < 0 || !t.lastIpcObject) continue
-      var at = t.lastIpcObject.at, size = t.lastIpcObject.size
-      if (!at || !size) continue
-      next[addressKey(t.address)] = { x: at[0], y: at[1], w: size[0], h: size[1], monitor: t.monitor ? String(t.monitor.name) : "" }
+  // Window places come straight from Hyprland's request socket
+  // ("j/clients"), not through Quickshell's window list: refreshing that
+  // makes every binding that watches windows (the whole dock model) redo its
+  // work, while this is one small request with nothing bound to its result
+  // but the smart hide's rects, which only change when a window does.
+  property string clientsReply: ""
+  Socket {
+    id: clientsQuery
+    path: Hyprland.requestSocketPath
+    parser: SplitParser {
+      splitMarker: ""
+      // Hyprland closes the connection after its reply; hanging up as soon
+      // as the reply is whole keeps that from being logged as an error.
+      onRead: data => {
+        root.clientsReply += data
+        if (/\]\s*$/.test(root.clientsReply) && root.takeClients(root.clientsReply)) { root.clientsReply = ""; clientsQuery.connected = false }
+      }
+    }
+    onConnectedChanged: {
+      if (connected) {
+        root.clientsReply = ""
+        write("j/clients")
+        flush()
+      } else {
+        if (root.clientsReply !== "") root.takeClients(root.clientsReply)
+        root.clientsReply = ""
+      }
+    }
+  }
+  function pollClients() { if (!clientsQuery.connected) clientsQuery.connected = true }
+  onHideModeChanged: if (hideMode === "smart") { workspaceRectsText = ""; pollClients() }
+
+  // Window rects by workspace id, for the smart hide; replaced only when
+  // they change.
+  property var workspaceRects: ({})
+  property string workspaceRectsText: ""
+  // Whether a floating window is on a shown workspace (it can be dragged
+  // without an event, so the smart hide then asks again now and then).
+  property bool floatingShown: false
+
+  function takeClients(text) {
+    var list
+    try { list = JSON.parse(text) } catch (e) { return false }
+    var monitors = Hyprland.monitors ? Hyprland.monitors.values : []
+    var names = ({}), shown = ({})
+    for (var m = 0; m < monitors.length; m++) {
+      names[monitors[m].id] = String(monitors[m].name)
+      if (monitors[m].activeWorkspace) shown[monitors[m].activeWorkspace.id] = true
+    }
+    var next = ({}), byWorkspace = ({}), floatingNow = false
+    for (var i = 0; i < list.length; i++) {
+      var c = list[i]
+      if (!c.workspace || c.workspace.id < 0 || !c.at || !c.size) continue
+      var r = { x: c.at[0], y: c.at[1], w: c.size[0], h: c.size[1], monitor: names[c.monitor] || "" }
+      next[addressKey(c.address)] = r
+      if (!byWorkspace[c.workspace.id]) byWorkspace[c.workspace.id] = []
+      byWorkspace[c.workspace.id].push([r.x, r.y, r.w, r.h])
+      if (c.floating && shown[c.workspace.id]) floatingNow = true
     }
     // Minimized windows keep their last place.
     for (var k in windowRects) if (!next[k]) next[k] = windowRects[k]
     windowRects = next
+    if (floatingShown !== floatingNow) floatingShown = floatingNow
+    if (hideMode === "smart") {
+      var textNow = JSON.stringify(byWorkspace)
+      if (textNow !== workspaceRectsText) {
+        workspaceRectsText = textNow
+        workspaceRects = byWorkspace
+      }
+    }
+    return true
   }
 
   function toplevelFor(key) {
@@ -493,17 +579,91 @@ Item {
 
   // Plays the effect for a window (backwards: out of the dock); false when
   // there's nothing to play it with.
-  function playEffect(top, backwards, done) {
+  function playEffect(top, backwards, done, ready, holdWhile) {
     if (minimizeEffect === "none" || !top) return false
-    var rect = windowRects[addressKey(top.address)]
-    if (!rect) return false
-    var win = dockWindows[rect.monitor]
-    if (!win) {
-      for (var name in dockWindows) { win = dockWindows[name]; break }
-    }
-    if (!win) return false
-    win.playMinimize(top, rect, backwards, done)
+    var key = addressKey(top.address)
+    // A window being minimized is still on screen, so its exact place is
+    // read along with the border (no polling needed); otherwise (restoring,
+    // or minimized some other way) its remembered place is used.
+    var live = !backwards && !!ready
+    if (!live && !windowRects[key]) return false
+    // The border as it is right now (it may be spinning), then play.
+    readLook(function(look) {
+      var rect = (live && look.windows[key]) || windowRects[key]
+      var win = rect ? dockWindows[rect.monitor] : null
+      if (!win) for (var name in dockWindows) { win = dockWindows[name]; break }
+      if (!rect || !win) {
+        if (ready) ready()
+        if (done) done()
+        return
+      }
+      if (live) {
+        var rects = root.windowRects
+        rects[key] = rect
+        root.windowRects = rects
+      }
+      win.playMinimize(top, rect, look, backwards, done, ready, holdWhile)
+    })
     return true
+  }
+
+  // The window border's look: width, rounding, and its active gradient
+  // (colors and angle), read from Hyprland.
+  property var lookCallbacks: []
+  function readLook(callback) {
+    lookCallbacks.push(callback)
+    if (!lookReader.running) lookReader.running = true
+  }
+  Process {
+    id: lookReader
+    command: ["bash", "-c", "hyprctl getoption general:col.active_border -j; echo; hyprctl getoption general:border_size -j; echo; hyprctl getoption decoration:rounding -j; echo; hyprctl clients -j | jq -c '[.[] | {a: .address, x: .at[0], y: .at[1], w: .size[0], h: .size[1], m: .monitor}]'"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var look = { colors: ["#ffffffff"], angle: 0, borderSize: 2, rounding: 0, windows: ({}) }
+        try {
+          var lines = text.split("\n").filter(function(l) { return l.trim() !== "" })
+          var g = JSON.parse(lines[0])
+          var parts = String(g.gradient || g.color || "").trim().split(/\s+/)
+          var colors = []
+          for (var i = 0; i < parts.length; i++) {
+            if (/deg$/.test(parts[i])) look.angle = Number(parts[i].replace("deg", ""))
+            else if (/^[0-9a-fA-F]{8}$/.test(parts[i])) colors.push("#" + parts[i])
+          }
+          if (colors.length > 0) look.colors = colors
+          look.borderSize = JSON.parse(lines[1]).int || 0
+          look.rounding = JSON.parse(lines[2]).int || 0
+          // Where every window is right now, by address.
+          var monitors = Hyprland.monitors ? Hyprland.monitors.values : []
+          var list = JSON.parse(lines[3])
+          for (var w = 0; w < list.length; w++) {
+            var mname = ""
+            for (var m = 0; m < monitors.length; m++) if (monitors[m].id === list[w].m) mname = String(monitors[m].name)
+            look.windows[root.addressKey(list[w].a)] = { x: list[w].x, y: list[w].y, w: list[w].w, h: list[w].h, monitor: mname }
+          }
+        } catch (e) {}
+        var callbacks = root.lookCallbacks
+        root.lookCallbacks = []
+        for (var c = 0; c < callbacks.length; c++) callbacks[c](look)
+      }
+    }
+  }
+
+  // Hyprland's border gradient over a box: progress runs along x and y
+  // weighted by the angle's sine (mirrored per quadrant); it's linear, so a
+  // LinearGradient from where it's 0 to where it's 1.
+  function gradientLine(box, angleDeg) {
+    var a = angleDeg * Math.PI / 180
+    var fx = false, fy = false, ang = a
+    if (a > 4.71) { fy = true; ang = 6.28 - a }
+    else if (a > 3.14) { fx = true; fy = true; ang = a - 3.14 }
+    else if (a > 1.57) { fx = true; ang = 3.14 - a }
+    var sn = Math.sin(ang)
+    var gx = (1 - sn) / box.w * (fx ? -1 : 1)
+    var gy = sn / box.h * (fy ? -1 : 1)
+    var ox = fx ? box.w : 0, oy = fy ? box.h : 0
+    var len2 = gx * gx + gy * gy
+    if (len2 === 0) return { x1: ox, y1: oy, x2: ox + 1, y2: oy }
+    return { x1: ox, y1: oy, x2: ox + gx / len2, y2: oy + gy / len2 }
   }
 
   // Minimizing (SUPER+M, Hide, anything that moves a window to
@@ -518,37 +678,20 @@ Item {
       if (name === "movewindowv2") {
         var parts = String(event.data).split(",")
         if (parts.length >= 3 && parts.slice(2).join(",") === root.minimizedName) {
-          var top = root.toplevelFor(root.addressKey(parts[0]))
-          if (top) root.playEffect(top, false, null)
+          // Windows minimized through minimizeWindow already have theirs.
+          var key = root.addressKey(parts[0])
+          if (root.minimizing[key]) delete root.minimizing[key]
+          else {
+            var top = root.toplevelFor(key)
+            if (top) root.playEffect(top, false, null)
+          }
         }
       }
-      if (/^(openwindow|closewindow|movewindowv2|changefloatingmode|fullscreen|workspacev2|activewindowv2)$/.test(name))
-        rectTimer.restart()
     }
   }
 
-  Timer {
-    id: rectTimer
-    interval: 120
-    onTriggered: { Hyprland.refreshToplevels(); rememberTimer.restart() }
-  }
-  Timer {
-    id: rememberTimer
-    interval: 60
-    onTriggered: root.rememberWindows()
-  }
-  // Floating windows moved by hand send no event.
-  Timer {
-    interval: 1500
-    repeat: true
-    running: root.minimizeEffect !== "none"
-    onTriggered: { Hyprland.refreshToplevels(); rememberTimer.restart() }
-  }
-
   function minimizeWindows(tops) {
-    var args = [tool, "minimize"]
-    for (var i = 0; i < tops.length; i++) if (!isMinimized(tops[i])) args.push(hexAddress(tops[i].address))
-    if (args.length > 2) Quickshell.execDetached(args)
+    for (var i = 0; i < tops.length; i++) minimizeWindow(tops[i])
   }
 
   function closeWindows(tops) {
@@ -680,29 +823,28 @@ Item {
 
   // --------------------------------------------------------------- windows
 
-  // Keeps Hyprland's window positions fresh for the smart hide.
+  // Window places are asked for again when Hyprland reports a change
+  // (placing the minimize effect, and the smart hide), and a new window's
+  // details (class, pid) once it opens.
   Connections {
     target: Hyprland
-    enabled: root.hideMode === "smart"
     function onRawEvent(event) {
       var name = event ? String(event.name) : ""
-      if (/^(openwindow|closewindow|movewindow|movewindowv2|changefloatingmode|fullscreen|workspace|workspacev2|activewindow|activewindowv2)$/.test(name))
-        refreshTimer.restart()
+      if (/^(openwindow|closewindow|movewindowv2|changefloatingmode|fullscreen|workspacev2|activewindowv2|focusedmonv2)$/.test(name))
+        clientsTimer.restart()
+      if (name === "openwindow") detailsTimer.restart()
     }
   }
+  Timer { id: clientsTimer; interval: 60; onTriggered: root.pollClients() }
+  Timer { id: detailsTimer; interval: 150; onTriggered: Hyprland.refreshToplevels() }
 
-  Timer {
-    id: refreshTimer
-    interval: 60
-    onTriggered: Hyprland.refreshToplevels()
-  }
-
-  // Floating windows dragged or resized send no event; catch those too.
+  // Floating windows dragged or resized send no event; for the smart hide,
+  // ask while one is on screen.
   Timer {
     interval: 1000
     repeat: true
-    running: root.hideMode === "smart"
-    onTriggered: Hyprland.refreshToplevels()
+    running: root.hideMode === "smart" && root.floatingShown
+    onTriggered: root.pollClients()
   }
 
   Variants {
@@ -772,12 +914,18 @@ Item {
         return Qt.rect(r.x, r.y, r.width, r.height)
       }
 
-      function playMinimize(top, rect, backwards, done) {
+      function playMinimize(top, rect, look, backwards, done, ready, holdWhile) {
         var mx = monitor ? monitor.x : 0, my = monitor ? monitor.y : 0
+        var bw = look.borderSize
+        var box = Qt.rect(rect.x - mx - bw, rect.y - my - bw, rect.w + 2 * bw, rect.h + 2 * bw)
         minimizeFx.effect = root.minimizeEffect
         minimizeFx.speed = root.minimizeSpeed
-        minimizeFx.play(top, Qt.rect(rect.x - mx, rect.y - my, rect.w, rect.h),
-          function() { return dockWindow.minimizeTarget(top) }, backwards, done)
+        minimizeFx.borderSize = bw
+        minimizeFx.rounding = look.rounding
+        minimizeFx.backdrop = Qt.rgba(root.background.r, root.background.g, root.background.b, 0.92)
+        minimizeFx.borderColors = look.colors
+        minimizeFx.gradLine = root.gradientLine({ w: box.width, h: box.height }, look.angle)
+        minimizeFx.play(top, box, function() { return dockWindow.minimizeTarget(top) }, backwards, ready, done, holdWhile)
       }
 
       property real hideOffset: revealed ? 0 : -(root.thickness + root.edgeGap + Style.space(10))
@@ -1029,18 +1177,15 @@ Item {
       // dock (smart hide).
       readonly property bool covered: {
         if (root.hideMode !== "smart" || !monitor || !workspace) return false
-        var tops = Hyprland.toplevels ? Hyprland.toplevels.values : []
+        var rects = root.workspaceRects[workspace.id] || []
         var r = place(layout.bodyStart, 0, layout.bodyEnd - layout.bodyStart, root.edgeGap + root.thickness)
         var origin = root.position === "bottom" ? { x: 0, y: modelData.height - height }
           : root.position === "right" ? { x: modelData.width - width, y: 0 } : { x: 0, y: 0 }
         var left = monitor.x + origin.x + r.x, top = monitor.y + origin.y + r.y
         var right = left + r.width, bottom = top + r.height
-        for (var i = 0; i < tops.length; i++) {
-          var w = tops[i]
-          if (!w || w.workspace !== workspace || !w.lastIpcObject) continue
-          var at = w.lastIpcObject.at, size = w.lastIpcObject.size
-          if (!at || !size) continue
-          if (at[0] < right && at[0] + size[0] > left && at[1] < bottom && at[1] + size[1] > top) return true
+        for (var i = 0; i < rects.length; i++) {
+          var w = rects[i]
+          if (w[0] < right && w[0] + w[2] > left && w[1] < bottom && w[1] + w[3] > top) return true
         }
         return false
       }

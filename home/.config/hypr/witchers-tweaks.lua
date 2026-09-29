@@ -163,6 +163,64 @@ if on("workspace-swipe") then
 end
 
 -- 3-finger swipe up opens the window overview, down closes it.
+-- Title bars on floating windows: the hyprbars plugin (built for this
+-- Hyprland by titlebars/build-hyprbars) as an invisible strip just above the
+-- window's top edge, to drag it by (double-click maximizes). The close,
+-- minimize and maximize buttons pop up over the strip's left end on hover
+-- (the witcher.titlebars shell plugin). Tiled windows get no strip. A build
+-- for another Hyprland version doesn't load (Hyprland checks), so after an
+-- update it just waits for the rebuild.
+local function titlebars()
+  local so = home .. "/.local/share/witchers-tweaks/hyprbars/hyprbars.so"
+  local built_for = read_lines(home .. "/.local/share/witchers-tweaks/hyprbars/built-for")[1]
+  local loaded = false
+  for _, plugin in ipairs(hl.get_loaded_plugins and hl.get_loaded_plugins() or {}) do
+    if plugin.name == "hyprbars" then loaded = true end
+  end
+  if not loaded and built_for then pcall(hl.plugin.load, so) end
+
+  if hl.plugin.hyprbars then
+    hl.config({ plugin = { hyprbars = {
+      bar_height = 14,
+      bar_color = "rgba(00000000)",
+      bar_title_enabled = false,
+      bar_part_of_window = false,
+      bar_precedence_over_border = false,
+      bar_blur = false,
+      on_double_click = "hyprctl dispatch 'hl.dsp.window.fullscreen({ mode = \"maximized\" })'",
+    } } })
+    hl.window_rule({ match = { float = false }, ["hyprbars:no_bar"] = true })
+    -- Maximized (and fullscreen) windows reach every edge; their buttons
+    -- move to the top bar.
+    hl.window_rule({ match = { fullscreen = true }, ["hyprbars:no_bar"] = true })
+  end
+end
+-- A mistake here mustn't stop the rest of the tweaks from loading.
+if on("titlebars") then
+  local ok, err = pcall(titlebars)
+  if not ok then hl.exec_cmd("notify-send 'Witcher title bars' " .. string.format("%q", tostring(err))) end
+end
+
+-- Floating windows resize by dragging their border. Hyprland's switch for it
+-- covers every window, so it's on only while the focused window is floating
+-- (and not fullscreen); tiled windows never resize this way. It follows
+-- Hyprland's own events, so nothing polls.
+if on("float-border-resize") then
+  local resizing = nil
+  local function follow()
+    local w = hl.get_active_window()
+    local want = w ~= nil and w.floating == true and (tonumber(w.fullscreen) or 0) == 0
+    if want ~= resizing then
+      resizing = want
+      hl.config({ general = { resize_on_border = want } })
+    end
+  end
+  for _, event in ipairs({ "window.active", "window.update_rules", "window.fullscreen", "window.close", "workspace.active" }) do
+    hl.on(event, function() pcall(follow) end)
+  end
+  pcall(follow)
+end
+
 if on("overview-gesture") then
   hl.gesture({ fingers = 3, direction = "up", action = function()
     hl.dispatch(hl.dsp.exec_cmd("omarchy-shell -q shell summon witcher.overview '{}'"))
@@ -194,7 +252,10 @@ end
 -- hidden special workspace, and the dock shows it (or its app) to bring it
 -- back.
 if on("dock-minimize") then
-  o.bind("SUPER + M", "Minimize window", hl.dsp.window.move({ workspace = "special:minimized", follow = false }))
+  -- Through the dock, which animates it without a blink; straight to the
+  -- minimized workspace when the dock isn't running.
+  o.bind("SUPER + M", "Minimize window",
+    "omarchy-shell witcher.dock minimize active >/dev/null 2>&1 || hyprctl dispatch 'hl.dsp.window.move({ workspace = \"special:minimized\", follow = false })'")
 end
 
 -- ---------------------------------------------------------------- top bar

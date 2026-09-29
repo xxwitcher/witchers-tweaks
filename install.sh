@@ -67,7 +67,9 @@ tweaks=(
   "agentchat|Top bar|Agent widget with your default agent's real terminal inside it|$plugins/witcher.agents/Panel.qml $plugins/witcher.agents/Main.qml $plugins/witcher.agents/Agent.qml $plugins/witcher.agents/manifest.json $plugins/witcher.agents/README.md $plugins/witcher.agents/bin/terminal-colors $plugins/witcher.agents/assets/claude.svg $plugins/witcher.agents/assets/codex.svg $plugins/witcher.agents/assets/codex-light.svg $plugins/witcher.agents/assets/fireworks.svg @agent-terminal @agent-bar"
   "notifytimeout|Notifications|Every notification leaves the screen after a few seconds (5 by default), critical ones too|$plugins/witcher.notify-timeout/Service.qml $plugins/witcher.notify-timeout/manifest.json @notify-timeout"
   "overview|Windows|Mission Control-style overview of workspaces and windows (3-finger swipe up)|$plugins/witcher.overview/Overview.qml $plugins/witcher.overview/manifest.json $plugins/witcher.overview/bin/focus-window @overview hypr:overview-gesture"
-  "dock|Windows|macOS-style dock: Apps view, kept, running and recent apps, drag to arrange, Downloads, Trash, SUPER+M minimizes|$plugins/witcher.dock/Dock.qml $plugins/witcher.dock/MinimizeEffect.qml $plugins/witcher.dock/manifest.json $plugins/witcher.dock/bin/dock $plugins/witcher.dock/AppsPanel.qml @dock hypr:dock-minimize"
+  "titlebars|Windows|Floating windows: drag by the top edge; close, minimize and maximize pop up at the top-left corner, or sit in the top bar while maximized (builds the hyprbars plugin)|home/.config/omarchy/hooks/post-update.d/witchers-titlebars.hook home/.config/omarchy/hooks/post-boot.d/witchers-titlebars.hook home/.config/omarchy/hooks/theme-set.d/witchers-titlebars.hook home/.config/omarchy/hooks/font-set.d/witchers-titlebars.hook $plugins/witcher.titlebars/Service.qml $plugins/witcher.titlebars/BarButtons.qml $plugins/witcher.titlebars/manifest.json @titlebars @titlebar-buttons @titlebar-bar hypr:titlebars"
+  "borderresize|Windows|Floating windows resize by dragging their border (tiled ones don't)|hypr:float-border-resize"
+  "dock|Windows|macOS-style dock: Apps view, kept, running and recent apps, drag to arrange, Downloads, Trash, SUPER+M minimizes|$plugins/witcher.dock/Dock.qml $plugins/witcher.dock/MinimizeEffect.qml $plugins/witcher.dock/shaders/genie.vert $plugins/witcher.dock/shaders/genie.frag $plugins/witcher.dock/shaders/genie.vert.qsb $plugins/witcher.dock/shaders/genie.frag.qsb $plugins/witcher.dock/manifest.json $plugins/witcher.dock/bin/dock $plugins/witcher.dock/AppsPanel.qml @dock hypr:dock-minimize"
   "suspend|Power|No screensaver; suspend after a chosen idle time (1-60 min)|$plugins/witcher.idle-suspend/Service.qml $plugins/witcher.idle-suspend/manifest.json @idle-suspend"
   "smidriver|Hardware|Silicon Motion SM77x USB display adapter driver (evdi-dkms based, with a crash fix)|@smi-driver"
   "touchbar|Hardware|Touch Bar layout and screenshot key (MacBooks with tiny-dfr)|system/etc/tiny-dfr"
@@ -1021,6 +1023,36 @@ configure_dock() {
   dock_peek off
 }
 
+# ---------------------------------------------------------------- title bars
+
+# The maximized window's buttons go in the top bar right after the Omarchy
+# menu (where the tab's buttons sit on a window), or first on the left.
+place_titlebar_buttons() {
+  edit_shell_config "window buttons in the top bar" '
+    if any(.bar.layout[]?[]?; .id == "witcher.titlebars") then . else
+      (.bar.layout // {}) as $layout
+      | ([$layout | to_entries[] | select(any(.value[]?; .id == "omarchy.menu")) | .key] | first) as $section
+      | if $section == null then .bar.layout.left = [{id: "witcher.titlebars"}] + ($layout.left // [])
+        else .bar.layout[$section] |= (
+          ([to_entries[] | select(.value.id == "omarchy.menu") | .key] | first) as $at
+          | .[:$at + 1] + [{id: "witcher.titlebars"}] + .[$at + 1:])
+        end
+    end'
+}
+
+# The plugin comes out of Hyprland first, then its build goes.
+remove_titlebars() {
+  local dir="$HOME/.local/share/witchers-tweaks/hyprbars"
+  if hyprctl plugin list 2>/dev/null | grep -q "Plugin hyprbars"; then
+    hyprctl plugin unload "$dir/hyprbars.so" >/dev/null 2>&1 || true
+    echo "unloaded hyprbars"
+  fi
+  if [[ -d $dir ]]; then
+    rm -rf "$dir"
+    echo "removed  ~/.local/share/witchers-tweaks/hyprbars"
+  fi
+}
+
 # ---------------------------------------------------------------- window corners
 
 rounding_conf="$HOME/.config/witchers-tweaks/rounding.conf"
@@ -1335,6 +1367,18 @@ step() {
     apply:@settings-pin) pin_settings ;;
     remove:@settings-pin) unpin_settings ;;
     check:@settings-pin) return 2 ;;
+
+    apply:@titlebars) "$repo/titlebars/build-hyprbars" ;;
+    remove:@titlebars) remove_titlebars ;;
+    check:@titlebars) [[ -f $HOME/.local/share/witchers-tweaks/hyprbars/hyprbars.so ]] ;;
+
+    apply:@titlebar-bar) place_titlebar_buttons ;;
+    remove:@titlebar-bar) edit_shell_config "no window buttons in the top bar" '.bar.layout |= with_entries(.value |= map(select(.id != "witcher.titlebars")))' ;;
+    check:@titlebar-bar) shell_config_has 'any(.bar.layout[]?[]?; .id == "witcher.titlebars")' ;;
+
+    apply:@titlebar-buttons) enable_service witcher.titlebars '{}' "window buttons" ;;
+    remove:@titlebar-buttons) disable_service witcher.titlebars "no window buttons" ;;
+    check:@titlebar-buttons) service_enabled witcher.titlebars ;;
 
     apply:@dock) setup_dock ;;
     remove:@dock) disable_service witcher.dock "no dock" ;;

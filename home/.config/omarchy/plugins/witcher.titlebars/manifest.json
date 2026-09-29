@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "witcher.titlebars",
+  "name": "Window buttons",
+  "version": "1.0.0",
+  "author": "witcher",
+  "license": "MIT",
+  "description": "Window buttons for floating windows: a tab that grows out of a window's top-left corner on hover, and in the top bar while a window is maximized.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarButtons.qml"
+  },
+  "barWidget": {
+    "displayName": "Window buttons",
+    "description": "Close, minimize and restore for the maximized window.",
+    "category": "System",
+    "allowMultiple": false
+  }
+}
