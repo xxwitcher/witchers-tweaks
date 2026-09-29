@@ -11,8 +11,8 @@ import qs.Ui
 // pointer last hovered in the strip (the current one to start with), as big
 // live thumbnails.
 //
-// Clicking a workspace goes to it; clicking a window goes to that window.
-// Either way bin/focus-window then puts the cursor on the focused window, so
+// Clicking a workspace goes to it; clicking a window goes to that window,
+// raised above the others when it floats. Either way bin/focus-window then puts the cursor on the focused window, so
 // Omarchy's focus-follows-mouse doesn't hand focus to another one.
 // Keys: Left/Right pick a workspace, Tab/Shift+Tab a window, Enter goes to the
 // picked window (or the workspace when it's empty), Esc closes. A click on
