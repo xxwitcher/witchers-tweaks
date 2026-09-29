@@ -2,7 +2,9 @@
 # Witcher's Tweaks: optional tweaks for Omarchy, each one added, removed or
 # configured on its own.
 #
-#   ./install.sh                     pick tweaks category by category
+#   ./install.sh                     the setup wizard (in a desktop session)
+#   ./install.sh --tui               pick tweaks category by category, in the terminal
+#   ./install.sh --gui               the setup wizard
 #   ./install.sh --add [tweak...]    add tweaks (asks which, from those not installed)
 #   ./install.sh --remove [tweak...] remove tweaks (asks which, then confirms)
 #   ./install.sh --configure [name]  change settings (monitors, borders, corners, suspend, notifications, dock)
@@ -1398,7 +1400,12 @@ menu_end="// <<< witchers-tweaks"
 menu_block() {
   local run
   run() { printf 'omarchy-launch-floating-terminal-with-presentation %q' "$(printf '%q %s' "$repo/install.sh" "$1")"; }
-  jq -n -r --arg add "$(run --add)" --arg remove "$(run --remove)" --arg configure "$(run --configure)" --arg title "Witcher's Tweaks" '
+  # Add and Remove open the setup wizard; Configure the Settings app when
+  # it's installed, else the terminal.
+  local gui configure
+  gui=$(printf '%q --gui' "$repo/install.sh")
+  configure="command -v witcher-settings >/dev/null && exec witcher-settings || $(run --configure)"
+  jq -n -r --arg add "$gui" --arg remove "$gui" --arg configure "$configure" --arg title "Witcher's Tweaks" '
     {
       "setup.witcher": {icon: "󰄛", label: $title, aliases: ["witcher", "tweaks"], description: "Add, remove or configure Witcher'"'"'s Tweaks"},
       "setup.witcher.add": {icon: "", label: "Add", description: "Install tweaks that are not on this machine yet", action: $add},
@@ -1619,8 +1626,17 @@ case "${1:-}" in
   --all)
     selected=("${names[@]}")
     ;;
-  "" | --add)
-    [[ ${1:-} == --add ]] && shift
+  --gui)
+    exec "$repo/settings/bin/witcher-installer"
+    ;;
+  "" | --add | --tui)
+    # With nothing to do, a desktop session gets the setup wizard.
+    if [[ -z ${1:-} && -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && command -v quickshell >/dev/null; then
+      "$repo/settings/bin/witcher-installer"
+      echo "The setup wizard is open. (./install.sh --tui for the terminal version.)"
+      exit 0
+    fi
+    [[ ${1:-} == --add || ${1:-} == --tui ]] && shift
     if (( $# )); then
       check_names "$@"
       selected=("$@")

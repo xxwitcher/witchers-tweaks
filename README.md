@@ -49,7 +49,10 @@ Pick and choose the tweaks you want. Use **Setup > Witcher's Tweaks** in the Oma
 ./install.sh --status              # what's installed
 ./install.sh --list                # every tweak
 ./install.sh --uninstall           # remove everything
+./install.sh --tui                 # the installer in the terminal instead of the setup window
 ```
+
+In a desktop session `./install.sh` opens a setup window: pick tweaks, set up the ones that have settings, install.
 
 ## Tweaks
 

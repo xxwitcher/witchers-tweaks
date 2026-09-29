@@ -1,0 +1,29 @@
+#!/bin/bash
+# Opens the Witcher's Tweaks setup wizard (settings/installer.qml), or
+# brings it forward when it's open. install.sh runs this in a desktop session.
+
+set -euo pipefail
+
+self=$(readlink -f "${BASH_SOURCE[0]}")
+app=$(cd "$(dirname "$self")/.." && pwd)
+repo=$(cd "$app/.." && pwd)
+shell_dir="${OMARCHY_PATH:-/usr/share/omarchy}/shell"
+runtime="${XDG_RUNTIME_DIR:-/tmp}/witcher-installer"
+
+address=$(hyprctl clients -j 2>/dev/null | jq -r 'first(.[] | select(.class == "org.witcher.installer") | .address) // empty')
+if [[ -n $address ]]; then
+  hyprctl dispatch "hl.dsp.focus({ window = \"address:$address\" })" >/dev/null
+  exit 0
+fi
+
+mkdir -p "$runtime"
+ln -sfn "$app/installer.qml" "$runtime/shell.qml"
+for dir in components bin; do ln -sfn "$app/$dir" "$runtime/$dir"; done
+ln -sfn "$shell_dir/Commons" "$runtime/Commons"
+ln -sfn "$shell_dir/Ui" "$runtime/Ui"
+
+# A floating window, centered; nothing may be installed yet to say so.
+hyprctl eval 'hl.window_rule({ match = { class = "^(org\\.witcher\\.installer)$" }, float = true, center = true, size = { 900, 640 } })' >/dev/null 2>&1 || true
+
+export WITCHER_REPO="$repo"
+setsid -f quickshell -n -p "$runtime" >/dev/null 2>&1
