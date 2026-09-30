@@ -5,9 +5,11 @@ import qs.Commons
 import qs.Ui
 
 // A bell in the bar that opens every recent notification: the ones still on
-// screen (read live from omarchy.notifications) and the ones that already
-// left it (kept by bin/notification-store, which copies them out of
-// Omarchy's 10-entry history). Each card is Omarchy's own NotificationCard,
+// screen (read live from omarchy.notifications, or from the files Omarchy
+// keeps for them on 4.0.3 and later, where a plugin can't reach that
+// service) and the ones that already left it (kept by
+// bin/notification-store, which copies them out of Omarchy's 10-entry
+// history). Each card is Omarchy's own NotificationCard,
 // so they look like the popups, with its hover ✕ to dismiss one and
 // "Dismiss all" to clear the lot. Clicking a card runs its action, like
 // clicking the popup would.
@@ -101,7 +103,8 @@ Panel {
     var queue = storeQueue.slice()
     var args = queue.shift()
     storeQueue = queue
-    storeProc.command = [root.storeCommand].concat(args)
+    // Without the service, the store lists the toasts on screen too.
+    storeProc.command = [root.storeCommand].concat(args, root.service ? [] : ["--live"])
     storeProc.running = true
   }
 
@@ -133,6 +136,8 @@ Panel {
     if (entry.live) {
       var index = liveIndex(entry.name)
       if (index >= 0 && service) service.dismissPopup(index)
+    } else if (entry.onScreen && entry.summary) {
+      Quickshell.execDetached(["omarchy-shell", "-q", "notifications", "dismiss", String(entry.summary)])
     }
     stored = stored.filter(function(e) { return e.name !== entry.name })
   }
@@ -141,6 +146,7 @@ Panel {
     var names = live.map(function(e) { return e.name })
     runStore(["clear"].concat(names))
     if (service) service.clearPopups()
+    else Quickshell.execDetached(["omarchy-shell", "-q", "notifications", "dismissAll"])
     stored = []
   }
 
@@ -202,9 +208,10 @@ Panel {
   }
 
   // Notifications silenced by Do Not Disturb go straight to history without
-  // touching the screen, so check for those now and then too.
+  // touching the screen, so check for those now and then too (more often
+  // without the service, when nothing says a toast came or went).
   Timer {
-    interval: 30000
+    interval: root.service ? 30000 : 5000
     repeat: true
     running: true
     onTriggered: root.runStore(["sync"])

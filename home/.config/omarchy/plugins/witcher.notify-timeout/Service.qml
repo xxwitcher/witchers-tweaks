@@ -1,4 +1,6 @@
 import QtQuick
+import Quickshell
+import Quickshell.Io
 
 // Takes every notification off the screen a few seconds after it appears.
 // Omarchy's own timer keeps normal toasts up for 8s (longer if the sender
@@ -18,8 +20,22 @@ Item {
 
   property var shell: null
 
+  // Omarchy 4.0.3 and later hand plugins a scoped shell without shellConfig;
+  // there the settings are read straight from shell.json.
+  property var fileConfig: ({})
+  FileView {
+    path: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: {
+      try { root.fileConfig = JSON.parse(text()) } catch (e) { console.warn("witcher.notify-timeout: bad shell.json", e) }
+    }
+    onFileChanged: reload()
+  }
+  readonly property var shellConfig: shell && shell.shellConfig ? shell.shellConfig : fileConfig
+
   readonly property var entry: {
-    var plugins = shell && shell.shellConfig && Array.isArray(shell.shellConfig.plugins) ? shell.shellConfig.plugins : []
+    var plugins = shellConfig && Array.isArray(shellConfig.plugins) ? shellConfig.plugins : []
     for (var i = 0; i < plugins.length; i++)
       if (plugins[i] && plugins[i].id === "witcher.notify-timeout") return plugins[i]
     return ({})
@@ -36,6 +52,13 @@ Item {
   function notificationService() {
     return shell && typeof shell.firstPartyServiceFor === "function"
       ? shell.firstPartyServiceFor("omarchy.notifications") : null
+  }
+
+  // The scoped shell of Omarchy 4.0.3 and later has no way to the service,
+  // so bin/expire-popups does the same from outside, through its IPC.
+  Process {
+    running: root.shell !== null && !("shellConfig" in root.shell)
+    command: [String(Qt.resolvedUrl("bin/expire-popups")).replace(/^file:\/\//, "")]
   }
 
   function sweep() {

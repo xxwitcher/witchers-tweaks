@@ -56,6 +56,20 @@ Item {
   property var shell: null
   property var manifest: null
 
+  // Omarchy 4.0.3 and later hand plugins a scoped shell without shellConfig;
+  // there the settings are read straight from shell.json.
+  property var fileConfig: ({})
+  FileView {
+    path: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: {
+      try { root.fileConfig = JSON.parse(text()) } catch (e) { console.warn("witcher.dock: bad shell.json", e) }
+    }
+    onFileChanged: reload()
+  }
+  readonly property var shellConfig: shell && shell.shellConfig ? shell.shellConfig : fileConfig
+
   readonly property string pluginId: "witcher.dock"
   readonly property string pluginDir: String(Qt.resolvedUrl(".")).replace(/^file:\/\//, "").replace(/\/$/, "")
   readonly property string tool: pluginDir + "/bin/dock"
@@ -69,7 +83,7 @@ Item {
   // --------------------------------------------------------------- settings
 
   readonly property var entry: {
-    var plugins = shell && shell.shellConfig && Array.isArray(shell.shellConfig.plugins) ? shell.shellConfig.plugins : []
+    var plugins = shellConfig && Array.isArray(shellConfig.plugins) ? shellConfig.plugins : []
     for (var i = 0; i < plugins.length; i++)
       if (plugins[i] && plugins[i].id === pluginId) return plugins[i]
     return ({})
@@ -92,7 +106,7 @@ Item {
   readonly property var pinned: Array.isArray(entry.pinned)
     ? entry.pinned.filter(function(id) { return typeof id === "string" && id.length > 0 }) : []
   readonly property bool overviewOn: {
-    var plugins = shell && shell.shellConfig && Array.isArray(shell.shellConfig.plugins) ? shell.shellConfig.plugins : []
+    var plugins = shellConfig && Array.isArray(shellConfig.plugins) ? shellConfig.plugins : []
     return plugins.some(function(p) { return p && p.id === "witcher.overview" })
   }
 
@@ -761,13 +775,14 @@ Item {
     }
   }
 
+  // Saved through updateEntryInline, which takes the whole entry: the one
+  // call a plugin may make for its own settings on every Omarchy 4.
   function writePinned(list) {
-    if (!shell || typeof shell.mutateShellConfig !== "function") return
-    shell.mutateShellConfig(function(config) {
-      if (!Array.isArray(config.plugins)) config.plugins = []
-      for (var i = 0; i < config.plugins.length; i++)
-        if (config.plugins[i] && config.plugins[i].id === root.pluginId) config.plugins[i].pinned = list
-    })
+    if (!shell || typeof shell.updateEntryInline !== "function") return
+    var next = { id: root.pluginId }
+    for (var key in entry) if (key !== "id") next[key] = entry[key]
+    next.pinned = list
+    shell.updateEntryInline(root.pluginId, next)
   }
 
   // The id an app is kept under: its launcher, or one written for it from

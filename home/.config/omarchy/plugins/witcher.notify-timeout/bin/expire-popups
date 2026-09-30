@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Takes notifications off the screen after a few seconds, from outside the shell.
+
+Omarchy 4.0.3 and later don't let a plugin reach the notification service, so
+there Service.qml runs this instead of driving the service itself. Omarchy
+keeps one file per toast on screen in ~/.local/state/omarchy/notifications/;
+once one has been there for `seconds` (this plugin's entry in
+~/.config/omarchy/shell.json, default 5) it's dismissed through the service's
+own IPC, which matches on the summary.
+"""
+
+import json
+import os
+import subprocess
+import time
+from pathlib import Path
+
+STATE = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
+POPUPS = STATE / "omarchy/notifications"
+CONFIG = Path.home() / ".config/omarchy/shell.json"
+PLUGIN = "witcher.notify-timeout"
+
+
+def lifetime():
+    try:
+        plugins = json.loads(CONFIG.read_text()).get("plugins") or []
+        entry = next((p for p in plugins if isinstance(p, dict) and p.get("id") == PLUGIN), {})
+        seconds = float(entry.get("seconds"))
+        return seconds if seconds >= 1 else 5
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 5
+
+
+def main():
+    # name -> [first seen, text, last dismiss attempt]
+    seen = {}
+    while True:
+        now = time.monotonic()
+        current = {}
+        limit = None
+        for path in POPUPS.glob("*.json"):
+            try:
+                popup = json.loads(path.read_text())
+                summary = str(popup.get("summary") or "")
+                text = summary + "\n" + str(popup.get("body") or "")
+            except (OSError, ValueError, AttributeError):
+                continue
+            entry = seen.get(path.name)
+            # A sender updating a toast in place gets a fresh countdown.
+            if not entry or entry[1] != text:
+                entry = [now, text, 0]
+            current[path.name] = entry
+            if limit is None:
+                limit = lifetime()
+            if summary and now - entry[0] >= limit and now - entry[2] >= limit:
+                entry[2] = now
+                subprocess.run(["omarchy-shell", "-q", "notifications", "dismiss", summary],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        seen = current
+        time.sleep(0.5)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass

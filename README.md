@@ -117,7 +117,7 @@ Installing it adds `macsmc_hwmon.fan_control=1` to the kernel options in GRUB an
 
 ## Compatibility
 
-Developed on [Omarchy-Mac](https://github.com/omacom/omarchy-mac) and also works on a regular Omarchy install (Hyprland 0.56 with Lua config, Quickshell 0.3). Some tweaks rely on Omarchy internals, so an Omarchy update could break something in the future; [open an issue](https://github.com/xxwitcher/witchers-tweaks/issues) if it does.
+Developed on [Omarchy-Mac](https://github.com/omacom/omarchy-mac) (Apple Silicon) and meant to work the same on a regular Omarchy 4 install on a PC (Hyprland 0.56 with Lua config, Quickshell 0.3). `fans` and `touchbar` are only offered on Macs. Omarchy 4.0.3 and later give plugins a narrower view of the shell; there the dock and the notification tweaks read their settings from `shell.json` themselves and reach notifications through Omarchy's own files and IPC. Some tweaks rely on Omarchy internals, so an Omarchy update could break something in the future; [open an issue](https://github.com/xxwitcher/witchers-tweaks/issues) if it does.
 
 ## License
 

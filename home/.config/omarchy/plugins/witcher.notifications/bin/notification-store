@@ -15,6 +15,10 @@ when it trims its history).
 NAME is the history file name, <timestamp>-<id>.json. A dismissed name is
 remembered so the next sync doesn't bring it back from Omarchy's history.
 The list is printed as a JSON array, newest first.
+
+With --live the list also has the toasts still on screen ("onScreen": true),
+read from the files Omarchy keeps for them. The panel asks for that on
+Omarchy 4.0.3 and later, where it can't reach the notification service.
 """
 
 import json
@@ -119,15 +123,22 @@ def sync():
     trim()
 
 
-def listing():
+def listing(live=False):
     out = []
-    for path in ENTRIES.glob("*.json"):
+    names = set()
+    dismissed = load_dismissed() if live else set()
+    for path in list(ENTRIES.glob("*.json")) + (list(OMARCHY_DIR.glob("*.json")) if live else []):
+        on_screen = path.parent == OMARCHY_DIR
+        if path.name in names or (on_screen and path.name in dismissed):
+            continue
         try:
             entry = json.loads(path.read_text())
         except (OSError, ValueError):
             continue
         if isinstance(entry, dict):
             entry["name"] = path.name
+            entry["onScreen"] = on_screen
+            names.add(path.name)
             out.append(entry)
     out.sort(key=lambda e: stamp(e["name"]), reverse=True)
     return out
@@ -146,10 +157,13 @@ def dismiss(names):
 def clear(extra):
     names = {p.name for p in ENTRIES.glob("*.json")}
     names |= {p.name for p in HISTORY_DIR.glob("*.json")}
+    names |= {p.name for p in OMARCHY_DIR.glob("*.json")}
     dismiss(sorted(names | set(extra)))
 
 
 def main(argv):
+    live = "--live" in argv
+    argv = [a for a in argv if a != "--live"]
     command = argv[1] if len(argv) > 1 else "list"
     args = argv[2:]
     if command == "sync":
@@ -161,7 +175,7 @@ def main(argv):
     elif command != "list":
         print(__doc__.strip(), file=sys.stderr)
         return 2
-    print(json.dumps(listing()))
+    print(json.dumps(listing(live)))
     return 0
 
 

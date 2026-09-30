@@ -65,7 +65,7 @@ tweaks=(
   "battery|Top bar|Battery percentage next to the battery icon|@battery-percent"
   "bell|Top bar|Bell that opens recent notifications, each dismissable, with Dismiss all|$plugins/witcher.notifications/Panel.qml $plugins/witcher.notifications/manifest.json $plugins/witcher.notifications/bin/notification-store @notify-panel"
   "agentchat|Top bar|Agent widget with your default agent's real terminal inside it|$plugins/witcher.agents/Panel.qml $plugins/witcher.agents/Main.qml $plugins/witcher.agents/Agent.qml $plugins/witcher.agents/manifest.json $plugins/witcher.agents/README.md $plugins/witcher.agents/bin/terminal-colors $plugins/witcher.agents/assets/claude.svg $plugins/witcher.agents/assets/codex.svg $plugins/witcher.agents/assets/codex-light.svg $plugins/witcher.agents/assets/fireworks.svg @agent-terminal @agent-bar"
-  "notifytimeout|Notifications|Every notification leaves the screen after a few seconds (5 by default), critical ones too|$plugins/witcher.notify-timeout/Service.qml $plugins/witcher.notify-timeout/manifest.json @notify-timeout"
+  "notifytimeout|Notifications|Every notification leaves the screen after a few seconds (5 by default), critical ones too|$plugins/witcher.notify-timeout/Service.qml $plugins/witcher.notify-timeout/manifest.json $plugins/witcher.notify-timeout/bin/expire-popups @notify-timeout"
   "overview|Windows|Mission Control-style overview of workspaces and windows (3-finger swipe up)|$plugins/witcher.overview/Overview.qml $plugins/witcher.overview/manifest.json $plugins/witcher.overview/bin/focus-window @overview hypr:overview-gesture"
   "titlebars|Windows|Floating windows: drag by the top edge; close, minimize and maximize pop up at the top-left corner, or sit in the top bar while maximized (builds the hyprbars plugin)|home/.config/omarchy/hooks/post-update.d/witchers-titlebars.hook home/.config/omarchy/hooks/post-boot.d/witchers-titlebars.hook home/.config/omarchy/hooks/theme-set.d/witchers-titlebars.hook home/.config/omarchy/hooks/font-set.d/witchers-titlebars.hook $plugins/witcher.titlebars/Service.qml $plugins/witcher.titlebars/BarButtons.qml $plugins/witcher.titlebars/manifest.json @titlebars @titlebar-buttons @titlebar-bar hypr:titlebars"
   "borderresize|Windows|Floating windows resize by dragging their border (tiled ones don't)|hypr:float-border-resize"
@@ -124,6 +124,27 @@ available() {
       @fan-control) has_smc_fan || return 1 ;;
     esac
   done
+}
+
+# ---------------------------------------------------------------- packages
+
+# Installs packages that are missing. Omarchy's own commands ask for the
+# password with sudo, which needs a terminal; from the setup window or the
+# Settings app (SUDO=pkexec) pacman and yay are run through $SUDO instead.
+pkg_add() {
+  if [[ $SUDO == sudo ]]; then
+    omarchy pkg add "$@"
+  else
+    $SUDO pacman -S --noconfirm --needed -- "$@"
+  fi
+}
+
+pkg_aur_add() {
+  if [[ $SUDO == sudo ]]; then
+    omarchy pkg aur add "$@"
+  else
+    yay -S --noconfirm --needed --sudo "$SUDO" -- "$@"
+  fi
 }
 
 # ---------------------------------------------------------------- home files
@@ -403,7 +424,10 @@ setup_agent_terminal() {
   if pacman -Q qmltermwidget >/dev/null 2>&1; then
     echo "ok       qmltermwidget"
   else
-    omarchy pkg add qmltermwidget
+    if ! pkg_add qmltermwidget; then
+      echo "failed   installing qmltermwidget: run \`omarchy update\` and re-run: ./install.sh agentchat" >&2
+      return 1
+    fi
     echo "installed qmltermwidget"
     restart_shell=true
   fi
@@ -1203,7 +1227,7 @@ install_smi_driver() {
   # go through `omarchy update`, so point there instead of syncing here.
   local stale="run \`omarchy update\` and re-run: ./install.sh smidriver"
   if (( ${#needed[@]} )); then
-    if ! omarchy pkg add "${needed[@]}"; then
+    if ! pkg_add "${needed[@]}"; then
       echo "failed   installing ${needed[*]} — $stale" >&2
       return 0
     fi
@@ -1215,7 +1239,7 @@ install_smi_driver() {
   if pacman -Q evdi-dkms >/dev/null 2>&1; then
     echo "ok       evdi-dkms"
   else
-    if ! omarchy pkg aur add evdi-dkms; then
+    if ! pkg_aur_add evdi-dkms; then
       echo "failed   installing evdi-dkms — $stale" >&2
       return 0
     fi
@@ -1533,26 +1557,61 @@ tweak_state() {
   fi
 }
 
+# Runs one tweak's steps (apply: in order, remove: in reverse) on their own,
+# so a step that fails stops that tweak only: the rest still go in, and the
+# menu, the Hyprland reload and the shell restart still happen. The steps run
+# in a subshell to keep `set -e` working inside them; what they noted for the
+# end of the run (reload, restart, reboot) comes back through a file.
+failed_tweaks=()
+
+run_tweak() {
+  local action="$1" name="$2" status i run_flags
+  run_flags="$(mktemp)"
+  shift 2
+  local items=("$@")
+  set +e
+  (
+    set -e
+    trap 'declare -p reload_hypr restart_shell reboot_reasons | sed "s/^declare /declare -g /" >"$run_flags"' EXIT
+    if [[ $action == apply ]]; then
+      for (( i = 0; i < ${#items[@]}; i++ )); do step apply "${items[i]}"; done
+    else
+      for (( i = ${#items[@]} - 1; i >= 0; i-- )); do step remove "${items[i]}"; done
+    fi
+  )
+  status=$?
+  set -e
+  # shellcheck disable=SC1090
+  source "$run_flags"
+  rm -f "$run_flags"
+  if (( status != 0 )); then
+    failed_tweaks+=("$name")
+    echo "failed   $name (the output above says why); carrying on with the rest" >&2
+  fi
+  return 0
+}
+
 apply_tweaks() {
-  local t name item
+  local t name items
   for t in "${tweaks[@]}"; do
     name="$(field "$t" 1)"
     [[ " $* " == *" $name "* ]] || continue
     echo "== $name"
-    for item in $(field "$t" 4); do step apply "$item"; done
+    read -ra items <<<"$(field "$t" 4)"
+    run_tweak apply "$name" "${items[@]}"
   done
 }
 
 # Each tweak's steps in reverse, so its settings leave shell.json before its
 # plugin files go, and background loops stop before their scripts do.
 remove_tweaks() {
-  local t name items i
+  local t name items
   for t in "${tweaks[@]}"; do
     name="$(field "$t" 1)"
     [[ " $* " == *" $name "* ]] || continue
     echo "== removing $name"
     read -ra items <<<"$(field "$t" 4)"
-    for (( i = ${#items[@]} - 1; i >= 0; i-- )); do step remove "${items[i]}"; done
+    run_tweak remove "$name" "${items[@]}"
   done
   tidy_loader
 }
@@ -1923,9 +1982,10 @@ if $reload_hypr && command -v hyprctl >/dev/null && hyprctl version >/dev/null 2
   if [[ -n "${errors//[[:space:]]/}" ]]; then
     echo "Hyprland config errors:" >&2
     echo "$errors" >&2
-    exit 1
+    hypr_errors=true
+  else
+    echo "Hyprland reloaded"
   fi
-  echo "Hyprland reloaded"
 fi
 
 # Restart the Omarchy shell (bar) when a plugin changed and it's running.
@@ -1953,5 +2013,11 @@ if (( ${#reboot_reasons[@]} )); then
       [[ $answer == [yY]* ]] && omarchy system reboot
     fi
   fi
+fi
+
+[[ ${hypr_errors:-false} == true ]] && exit 1
+if (( ${#failed_tweaks[@]} )); then
+  echo "failed   ${failed_tweaks[*]}: not (fully) done, see above; everything else is" >&2
+  exit 1
 fi
 exit 0

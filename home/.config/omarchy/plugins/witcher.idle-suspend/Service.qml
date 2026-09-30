@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Io
 import Quickshell.Wayland
 
 // Suspends the machine after `minutes` of inactivity, set on this plugin's
@@ -17,9 +18,23 @@ Item {
 
   property var shell: null
 
+  // Omarchy 4.0.3 and later hand plugins a scoped shell without shellConfig;
+  // there the settings are read straight from shell.json.
+  property var fileConfig: ({})
+  FileView {
+    path: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: {
+      try { root.fileConfig = JSON.parse(text()) } catch (e) { console.warn("witcher.idle-suspend: bad shell.json", e) }
+    }
+    onFileChanged: reload()
+  }
+  readonly property var shellConfig: shell && shell.shellConfig ? shell.shellConfig : fileConfig
+
   readonly property int defaultMinutes: 5
   readonly property var entry: {
-    var plugins = shell && shell.shellConfig && Array.isArray(shell.shellConfig.plugins) ? shell.shellConfig.plugins : []
+    var plugins = shellConfig && Array.isArray(shellConfig.plugins) ? shellConfig.plugins : []
     for (var i = 0; i < plugins.length; i++)
       if (plugins[i] && plugins[i].id === "witcher.idle-suspend") return plugins[i]
     return ({})
