@@ -147,6 +147,21 @@ if on("swap-ctrl-super") then
   end
 end
 
+-- Caps Lock turns on capitals. Omarchy makes it the compose key, so only that
+-- option is taken out and the rest are kept.
+if on("caps-lock") then
+  local options = hl.get_config("input.kb_options")
+  options = type(options) == "string" and options or ""
+  local kept = {}
+  for option in options:gmatch("[^,]+") do
+    if option ~= "compose:caps" then table.insert(kept, option) end
+  end
+  local new = table.concat(kept, ",")
+  if new ~= options then
+    hl.config({ input = { kb_options = new } })
+  end
+end
+
 -- 3-finger horizontal swipe between workspaces, tuned to feel like macOS: a
 -- short swipe is enough and a quick flick commits.
 if on("workspace-swipe") then

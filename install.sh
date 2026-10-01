@@ -56,6 +56,7 @@ tweaks=(
   "columns|Look|Scrolling layout: one column per screen instead of two|hypr:wide-columns"
   "rounding|Look|Window corner rounding on a % slider (the same scale as the dock's)|hypr:window-rounding @window-rounding"
   "swapkeys|Input|Swap left Ctrl and left Super (the right-hand keys stay)|hypr:swap-ctrl-super"
+  "capslock|Input|Caps Lock turns on capitals (instead of being the compose key)|hypr:caps-lock"
   "swipe|Input|macOS-like 3-finger swipe between workspaces|hypr:workspace-swipe"
   "bindbrowser|Keybindings|SUPER+B opens the browser (instead of SUPER+SHIFT+B)|hypr:bind-browser"
   "bindagent|Keybindings|SUPER+A opens your default agent (instead of SUPER+SHIFT+A)|hypr:bind-agent"
@@ -265,6 +266,13 @@ remove_loader() {
   unlink_home home/.config/hypr/witchers-tweaks.lua
 }
 
+# fcitx5 keeps the keymap it started with, so after a keyboard tweak changes
+# it has to restart too, or the keys keep acting the old way until it does.
+keymap_changed() {
+  [[ $1 == caps-lock || $1 == swap-ctrl-super ]] && restart_ime=true
+  return 0
+}
+
 enable_hypr() {
   local name="$1"
   ensure_loader
@@ -275,6 +283,7 @@ enable_hypr() {
     echo "$name" >>"$tweaks_conf"
     echo "set      $name"
     reload_hypr=true
+    keymap_changed "$name"
   fi
 }
 
@@ -285,6 +294,7 @@ disable_hypr() {
     mv "$tweaks_conf.tmp.$stamp" "$tweaks_conf"
     echo "unset    $name"
     reload_hypr=true
+    keymap_changed "$name"
   else
     echo "ok       $name (not set)"
   fi
@@ -1572,7 +1582,7 @@ run_tweak() {
   set +e
   (
     set -e
-    trap 'declare -p reload_hypr restart_shell reboot_reasons | sed "s/^declare /declare -g /" >"$run_flags"' EXIT
+    trap 'declare -p reload_hypr restart_shell restart_ime reboot_reasons | sed "s/^declare /declare -g /" >"$run_flags"' EXIT
     if [[ $action == apply ]]; then
       for (( i = 0; i < ${#items[@]}; i++ )); do step apply "${items[i]}"; done
     else
@@ -1814,6 +1824,8 @@ selected=()
 reload_hypr=false
 # Set by the steps when a shell plugin comes or goes.
 restart_shell=false
+# Set when a keyboard tweak changes the keymap.
+restart_ime=false
 # What needs a reboot to take effect (kernel options, drivers), from need_reboot.
 reboot_reasons=()
 
@@ -1985,6 +1997,10 @@ if $reload_hypr && command -v hyprctl >/dev/null && hyprctl version >/dev/null 2
     hypr_errors=true
   else
     echo "Hyprland reloaded"
+  fi
+  if $restart_ime && command -v omarchy >/dev/null; then
+    omarchy restart xcompose >/dev/null 2>&1 || true
+    echo "fcitx5 restarted for the new keymap"
   fi
 fi
 

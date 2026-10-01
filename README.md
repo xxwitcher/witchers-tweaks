@@ -70,6 +70,7 @@ In a desktop session `./install.sh` opens a setup window: pick tweaks, set up th
 | `columns` | Scrolling layout: one column per screen |
 | `swipe` | macOS-like 3-finger workspace swipe |
 | `swapkeys` | Swap left Ctrl and left Super |
+| `capslock` | Caps Lock turns on capitals instead of being the compose key |
 | `bindbrowser` | SUPER+B opens the browser |
 | `bindagent` | SUPER+A opens your default agent |
 | `bindclose` | CTRL+Q closes the window |

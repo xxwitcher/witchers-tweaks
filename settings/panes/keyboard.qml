@@ -176,6 +176,7 @@ Column {
       onChosen: function(v) { pane.setOption(["ctrl:nocaps", "caps:"], v) }
     }
     TweakRow { tweak: "swapkeys"; label: "Swap left Ctrl and left Super" }
+    TweakRow { tweak: "capslock"; label: "Caps Lock turns on capitals (not compose)" }
     ButtonRow {
       label: "Compose sequences"
       buttonText: "Edit…"
